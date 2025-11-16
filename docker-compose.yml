@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://user:password@db/mydatabase
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  ml-service:
+    build:
+      context: ./ML  # Указываем папку с Dockerfile
+      args:
+        # Передаем имя файла в аргумент MODEL_FILE
+        - MODEL_FILE=best_model.pt
+    ports:
+      - "5000:5000"
+    volumes:
+      # В этом случае volumes уже не обязательны, так как модель копируется в образ
+      # Но их можно оставить для быстрой разработки, если нужно
+      - ./ML/triplets_data:/app/triplets_data
+
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=mydatabase
+
+volumes:
+  postgres_data:

@@ -1,0 +1,380 @@
+# ==============================================================================
+#
+#               Единый Скрипт Подготовки Данных для Обучения
+#
+# ==============================================================================
+#
+#   Описание:
+#   Этот скрипт выполняет полный конвейер предобработки данных:
+#   1. Формирует сбалансированную выборку из метаданных arXiv.
+#   2. Скачивает PDF-файлы отобранных статей.
+#   3. Извлекает из них полный текст.
+#   4. Обогащает данные с помощью LLM (Ollama) для генерации синтетических запросов.
+#   5. Создает семантический индекс для "умного" поиска похожих/непохожих статей.
+#   6. Генерирует обучающие триплеты (anchor, positive, negative).
+#   7. Для каждого уникального документа в триплетах:
+#      - Разбивает текст на предложения.
+#      - Кодирует предложения в эмбеддинги.
+#      - Сохраняет матрицу эмбеддингов в отдельный .pt файл в хэш-структуре папок.
+#   8. Создает итоговый `metadata.json` с путями к файлам для обучения.
+#
+#   Запуск:
+#   > python prepare_data.py
+#
+#   Все параметры настраиваются в файле `config.py`.
+#
+# ==============================================================================
+
+import re
+import json
+import random
+import requests
+import fitz  # PyMuPDF
+import orjson
+import nltk
+import torch
+import numpy as np
+from pathlib import Path
+from collections import defaultdict
+from typing import List, Dict
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+
+# --- Импортируем наш единый конфиг ---
+from config import CONFIG
+
+# ==============================================================================
+# 0. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ==============================================================================
+
+def get_hashed_path(base_dir: Path, doc_id: str) -> Path:
+    """Генерирует путь вида /base_dir/20/01/200100116.pt из ID '2001.00116'"""
+    safe_id = "".join(filter(str.isalnum, doc_id))
+    if len(safe_id) < 4:
+        return base_dir / "_short_ids" / f"{safe_id}.pt"
+    return base_dir / safe_id[:2] / safe_id[2:4] / f"{safe_id}.pt"
+
+# ==============================================================================
+# ЭТАП 1: ФОРМИРОВАНИЕ ВЫБОРКИ
+# ==============================================================================
+
+def select_balanced_sample() -> List[Dict]:
+    print(f"\n--- ЭТАП 1: Формирование выборки из {CONFIG.METADATA_FILE} ---")
+    category_counts = defaultdict(int)
+    total_needed = sum(CONFIG.CATEGORIES_CONFIG.values())
+    selected_papers = []
+
+    try:
+        with open(CONFIG.METADATA_FILE, 'r', encoding='utf-8') as f:
+            for line in tqdm(f, desc="Сканирование метаданных", total=2000000): # Примерное кол-во строк для tqdm
+                if len(selected_papers) >= total_needed:
+                    break
+                
+                try: paper = orjson.loads(line)
+                except Exception: continue
+
+                paper_cats = paper.get('categories', '').split()
+                versions = paper.get('versions', [])
+                if not versions: continue
+                created = versions[0].get('created', '')
+                year_match = re.search(r'\b(19\d{2}|20\d{2})\b', created)
+                if not year_match or int(year_match.group(0)) < CONFIG.YEAR_SINCE: continue
+
+                for cat in paper_cats:
+                    if cat in CONFIG.CATEGORIES_CONFIG and category_counts[cat] < CONFIG.CATEGORIES_CONFIG[cat]:
+                        selected_papers.append(paper)
+                        category_counts[cat] += 1
+                        break
+    except FileNotFoundError:
+        print(f"CRITICAL: Файл метаданных не найден: {CONFIG.METADATA_FILE}")
+        exit(1)
+
+    print(f"✓ Выборка сформирована. Всего отобрано: {len(selected_papers)} статей.")
+    print("Распределение по категориям:")
+    for cat, count in category_counts.items(): print(f"  - {cat}: {count} статей")
+    return selected_papers
+
+# ==============================================================================
+# ЭТАП 2: СКАЧИВАНИЕ PDF-ФАЙЛОВ
+# ==============================================================================
+
+def _download_single_pdf(paper: Dict):
+    article_id = paper.get('id')
+    if not article_id: return
+    file_path = CONFIG.PDF_DIR / f"{article_id}.pdf"
+    if file_path.exists(): return
+    url = f"https://export.arxiv.org/pdf/{article_id}.pdf"
+    try:
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            with open(file_path, 'wb') as f: f.write(r.content)
+    except Exception: pass
+
+def download_pdfs(papers: List[Dict]):
+    print(f"\n--- ЭТАП 2: Скачивание PDF-файлов в {CONFIG.PDF_DIR} ---")
+    CONFIG.PDF_DIR.mkdir(exist_ok=True)
+    with ThreadPoolExecutor(max_workers=CONFIG.PDF_DOWNLOAD_WORKERS) as executor:
+        list(tqdm(executor.map(_download_single_pdf, papers), total=len(papers), desc="Скачивание PDF"))
+    print("✓ Скачивание завершено.")
+
+# ==============================================================================
+# ЭТАП 3: ИЗВЛЕЧЕНИЕ ТЕКСТА
+# ==============================================================================
+
+def _extract_text(pdf_path: Path) -> str:
+    if not pdf_path.exists(): return ""
+    try:
+        with fitz.open(pdf_path) as doc:
+            text = " ".join(page.get_text() for page in doc)
+        return re.sub(r'\s+', ' ', text).strip()
+    except Exception: return ""
+
+def enrich_with_full_text(papers: List[Dict]) -> List[Dict]:
+    print(f"\n--- ЭТАП 3: Извлечение текста из PDF ---")
+    paths = [CONFIG.PDF_DIR / f"{p['id']}.pdf" for p in papers]
+    with ProcessPoolExecutor(max_workers=CONFIG.TEXT_EXTRACTION_WORKERS) as executor:
+        texts = list(tqdm(executor.map(_extract_text, paths), total=len(paths), desc="Извлечение текста"))
+    for paper, text in zip(papers, texts): paper['full_text'] = text
+    return papers
+
+# ==============================================================================
+# ЭТАП 4: ОБОГАЩЕНИЕ ЧЕРЕЗ LLM
+# ==============================================================================
+
+class OllamaEnricher:
+    def _generate_prompt(self, title: str, abstract: str) -> str:
+        return f"""You are an expert researcher.
+Task: Read the provided paper abstract and generate 3 distinct search queries.
+Also identify the primary 'modality' (e.g., text, image, audio, graph) and the primary 'task' (e.g., generation, classification).
+Return ONLY raw JSON: {{"queries": ["query1", "query2", "query3"], "modality": ["modality1"], "task": "primary_task"}}
+Paper Title: {title}
+Abstract: {abstract[:1500]}
+JSON:"""
+
+    def _enrich_paper(self, paper: Dict) -> Dict:
+        if 'synthetic_queries' in paper: return paper
+        prompt = self._generate_prompt(paper.get('title', ''), paper.get('abstract', ''))
+        try:
+            payload = {"model": CONFIG.OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"}
+            response = requests.post(CONFIG.OLLAMA_API_URL, json=payload, timeout=CONFIG.OLLAMA_REQUEST_TIMEOUT)
+            response.raise_for_status()
+            result = response.json()['response'].strip()
+            data = orjson.loads(result)
+            paper['synthetic_queries'] = [q.lower() for q in data.get('queries', [])]
+            paper['modality'] = [m.lower() for m in data.get('modality', [])]
+            paper['task'] = data.get('task', 'unknown').lower()
+        except Exception:
+            paper['synthetic_queries'] = [paper.get('title', '').lower()]
+            paper['modality'] = ['unknown']
+            paper['task'] = 'unknown'
+        return paper
+
+    def enrich_all(self, papers: List[Dict]) -> List[Dict]:
+        print(f"\n--- ЭТАП 4: Обогащение данных через Ollama ({CONFIG.OLLAMA_MODEL}) ---")
+        with ThreadPoolExecutor(max_workers=CONFIG.LLM_WORKERS) as executor:
+            enriched = list(tqdm(executor.map(self._enrich_paper, papers), total=len(papers), desc="LLM Enrichment"))
+        return enriched
+
+# ==============================================================================
+# ЭТАП 5: ГЕНЕРАЦИЯ ТРИПЛЕТОВ
+# ==============================================================================
+
+class SemanticSearcher:
+    def __init__(self, papers: List[Dict], model: SentenceTransformer):
+        self.papers = papers
+        self.model = model
+        self.embeddings = self._build_index()
+
+    def _build_index(self):
+        print("\n--- ЭТАП 5.1: Создание семантического индекса ---")
+        texts_to_embed = [p.get('title', '') + ". " + p.get('abstract', '') for p in self.papers]
+        embeddings = self.model.encode(
+            texts_to_embed, batch_size=CONFIG.SENTENCE_EMBEDDING_BATCH_SIZE,
+            show_progress_bar=True, convert_to_tensor=True, normalize_embeddings=True
+        )
+        return embeddings.cpu().numpy()
+
+    def find_nearest_neighbor(self, paper_idx: int) -> int:
+        scores = self.embeddings @ self.embeddings[paper_idx].T
+        scores[paper_idx] = -1
+        return np.argmax(scores)
+
+    def find_dissimilar(self, paper_idx: int, top_k: int = 100) -> int:
+        scores = self.embeddings @ self.embeddings[paper_idx].T
+        most_similar_indices = np.argpartition(scores, -top_k)[-top_k:]
+        while True:
+            rand_idx = random.randint(0, len(self.papers) - 1)
+            if rand_idx not in most_similar_indices: return rand_idx
+
+def generate_triplets(papers: List[Dict], searcher: SemanticSearcher) -> List[Dict]:
+    print(f"\n--- ЭТАП 5.2: Генерация {CONFIG.NUM_TRIPLETS_TO_GENERATE} условных триплетов ---")
+    all_triplets = []
+    papers_with_queries_indices = [i for i, p in enumerate(papers) if p.get('synthetic_queries')]
+    if not papers_with_queries_indices:
+        print("CRITICAL: Нет обогащенных данных для генерации триплетов. Прерывание.")
+        exit(1)
+
+    for _ in tqdm(range(CONFIG.NUM_TRIPLETS_TO_GENERATE), desc="Генерация триплетов"):
+        positive_idx = random.choice(papers_with_queries_indices)
+        positive_paper = papers[positive_idx]
+        if not positive_paper['synthetic_queries']: continue
+        condition = random.choice(positive_paper['synthetic_queries'])
+
+        anchor_idx = searcher.find_nearest_neighbor(positive_idx)
+        anchor_paper = papers[anchor_idx]
+        anchor_cats_set = set(anchor_paper.get('categories', '').split())
+
+        negative_idx = -1
+        for _ in range(CONFIG.HARD_NEGATIVE_SEARCH_ATTEMPTS):
+            cand_idx = searcher.find_dissimilar(anchor_idx)
+            if cand_idx in [anchor_idx, positive_idx]: continue
+            if anchor_cats_set.intersection(set(papers[cand_idx].get('categories', '').split())):
+                negative_idx = cand_idx
+                break
+        if negative_idx == -1:
+            while True:
+                # negative_idx = searcher.find_dissimilar(anchor_idx)
+                negative_idx = random.randint(0, len(papers) - 1)
+                if negative_idx not in [anchor_idx, positive_idx]: break
+        
+        all_triplets.append({
+            'query': condition,
+            'anchor': {'id': anchor_paper['id']},
+            'positive': {'id': positive_paper['id']},
+            'negative': {'id': papers[negative_idx]['id']}
+        })
+
+    with open(CONFIG.OUTPUT_TRIPLETS_FILE, 'wb') as f:
+        f.write(orjson.dumps(all_triplets, option=orjson.OPT_INDENT_2))
+    print(f"✓ Сохранено {len(all_triplets)} триплетов в {CONFIG.OUTPUT_TRIPLETS_FILE}")
+    return all_triplets
+
+# ==============================================================================
+# ЭТАП 6: КОДИРОВАНИЕ ПРЕДЛОЖЕНИЙ И СОХРАНЕНИЕ
+# ==============================================================================
+
+def embed_and_save_documents(doc_ids: List[str], papers_by_id: Dict, model: SentenceTransformer):
+    print(f"\n--- ЭТАП 6: Кодирование предложений и сохранение в {CONFIG.EMBEDDINGS_PT_DIR} ---")
+    CONFIG.EMBEDDINGS_PT_DIR.mkdir(parents=True, exist_ok=True)
+    processed_count = 0
+    
+    pbar = tqdm(doc_ids, desc="Кодирование документов")
+    for doc_id in pbar:
+        output_path = get_hashed_path(CONFIG.EMBEDDINGS_PT_DIR, doc_id)
+        if output_path.exists(): continue
+            
+        paper = papers_by_id.get(doc_id)
+        if not paper: continue
+            
+        try:
+            full_text = ". ".join(filter(None, [paper.get('title', ''), paper.get('abstract', ''), paper.get('full_text', '')]))
+            if not full_text.strip(): continue
+            
+            sentences = nltk.sent_tokenize(full_text)
+            valid_sentences = [s.strip() for s in sentences if len(s.strip()) > CONFIG.MIN_SENTENCE_LENGTH][:CONFIG.MAX_SENTENCES]
+            if not valid_sentences: continue
+            
+            sentence_embeddings = model.encode(valid_sentences, batch_size=CONFIG.SENTENCE_EMBEDDING_BATCH_SIZE, show_progress_bar=False, convert_to_tensor=True)
+            
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(sentence_embeddings.cpu(), output_path)
+            
+            processed_count += 1
+            pbar.set_postfix({"Новых": processed_count})
+        except Exception as e:
+            print(f"\n[!] Ошибка при обработке документа {doc_id}: {e}")
+            continue
+            
+    print(f"✓ Обработка завершена. Добавлено {processed_count} новых документов.")
+
+# ==============================================================================
+# ЭТАП 7: СОЗДАНИЕ ИТОГОВЫХ МЕТАДАННЫХ
+# ==============================================================================
+
+def create_final_metadata(triplets: List[Dict]):
+    print(f"\n--- ЭТАП 7: Создание итогового файла метаданных с путями ---")
+    valid_triplets = []
+    
+    for triplet in tqdm(triplets, desc="Проверка файлов и сборка метаданных"):
+        # Получаем ID из исходных триплетов
+        anc_id = triplet['anchor']['id']
+        pos_id = triplet['positive']['id']
+        neg_id = triplet['negative']['id']
+
+        # Генерируем пути к .pt файлам для каждого ID
+        anc_path = get_hashed_path(CONFIG.EMBEDDINGS_PT_DIR, anc_id)
+        pos_path = get_hashed_path(CONFIG.EMBEDDINGS_PT_DIR, pos_id)
+        neg_path = get_hashed_path(CONFIG.EMBEDDINGS_PT_DIR, neg_id)
+
+        # Проверяем, что все три файла физически существуют на диске
+        if anc_path.exists() and pos_path.exists() and neg_path.exists():
+            # Если все файлы на месте, добавляем в итоговый список триплет
+            # с ключами *_path и строковым представлением пути
+            valid_triplets.append({
+                "query": triplet['query'],
+                "anchor_path": str(anc_path),      # <-- Исправлено: ключ 'anchor_path'
+                "positive_path": str(pos_path),    # <-- Исправлено: ключ 'positive_path'
+                "negative_path": str(neg_path)     # <-- Исправлено: ключ 'negative_path'
+            })
+            
+    print(f"✓ Найдено {len(valid_triplets):,} валидных триплетов из {len(triplets):,}.")
+    
+    # Сохраняем итоговый JSON в файл, указанный в конфиге
+    with open(CONFIG.FINAL_METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(valid_triplets, f, indent=2, ensure_ascii=False)
+        
+    print(f"✓ Итоговый файл метаданных сохранен: {CONFIG.FINAL_METADATA_FILE}")
+
+# ==============================================================================
+# ОСНОВНОЙ ЗАПУСК ПАЙПЛАЙНА
+# ==============================================================================
+
+if __name__ == "__main__":
+    print("="*60)
+    print("🚀 ЗАПУСК ЕДИНОГО ПАЙПЛАЙНА ПОДГОТОВКИ ДАННЫХ")
+    print(f"Используемое устройство для эмбеддингов: {CONFIG.DEVICE}")
+    print("="*60)
+
+    # Этапы 1-3: Сбор и базовое обогащение
+    selected_papers = select_balanced_sample()
+    if not selected_papers:
+        print("❌ Не удалось сформировать выборку. Пайплайн остановлен.")
+        exit(1)
+    
+    download_pdfs(selected_papers)
+    papers_with_text = enrich_with_full_text(selected_papers)
+    
+    # Этап 4: Обогащение через LLM
+    ollama_enricher = OllamaEnricher()
+    enriched_papers = ollama_enricher.enrich_all(papers_with_text)
+    
+    # Сохраняем кэш, чтобы не перегенерировать каждый раз
+    CONFIG.BASE_DATA_DIR.mkdir(exist_ok=True)
+    with open(CONFIG.ENRICHED_PAPERS_CACHE_FILE, 'wb') as f:
+        f.write(orjson.dumps(enriched_papers))
+    print(f"✓ Кэш обогащенных данных сохранен в {CONFIG.ENRICHED_PAPERS_CACHE_FILE}")
+    
+    # Этап 5: Генерация триплетов
+    print(f"\n1. Загрузка модели для семантического поиска: {CONFIG.SENTENCE_EMBEDDING_MODEL}")
+    embedding_model = SentenceTransformer(CONFIG.SENTENCE_EMBEDDING_MODEL, device=CONFIG.DEVICE)
+    
+    searcher = SemanticSearcher(enriched_papers, embedding_model)
+    triplets = generate_triplets(enriched_papers, searcher)
+    
+    # Этапы 6 и 7: Кодирование предложений и создание финальных метаданных
+    papers_by_id = {p['id']: p for p in enriched_papers}
+    unique_doc_ids = set()
+    for t in triplets:
+        unique_doc_ids.add(t['anchor']['id'])
+        unique_doc_ids.add(t['positive']['id'])
+        unique_doc_ids.add(t['negative']['id'])
+    
+    embed_and_save_documents(list(unique_doc_ids), papers_by_id, embedding_model)
+    create_final_metadata(triplets)
+
+    print("\n" + "="*60)
+    print("✅ Все этапы предобработки успешно завершены!")
+    print(f"   - Эмбеддинги сохранены в: {CONFIG.EMBEDDINGS_PT_DIR}")
+    print(f"   - Метаданные для обучения сохранены в: {CONFIG.FINAL_METADATA_FILE}")
+    print("="*60 + "\n")
