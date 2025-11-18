@@ -1,7 +1,9 @@
 # ==============================================================================
 # 0. ИМПОРТЫ
 # ==============================================================================
+
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
@@ -13,9 +15,9 @@ from tqdm import tqdm
 # ==============================================================================
 from config import CONFIG
 from models import UniversalScorer
-from dataset import HierarchicalTripletDataset, collate_for_hierarchical
+from dataset import collate_for_hierarchical
 from checkpoint_utils import save_checkpoint, load_checkpoint, find_latest_checkpoint
-
+from dataset import HierarchicalTripletDataset2 as Dataset
 # ==============================================================================
 # 2. ФУНКЦИЯ ОБУЧЕНИЯ ОДНОЙ ЭПОХИ
 # ==============================================================================
@@ -58,13 +60,18 @@ def train_epoch(model, dataloader, loss_fn, optimizer, scaler, scheduler, epoch,
             
             current_loss = loss.item() * CONFIG.ACCUMULATION_STEPS
             total_loss += current_loss
+            with torch.no_grad():
+                d_pos = F.pairwise_distance(anchor_vec, positive_vec)
+                d_neg = F.pairwise_distance(anchor_vec, negative_vec)
+                delta = (d_neg - d_pos).mean().item()
             pbar.set_postfix({
                 'loss': f'{current_loss:.4f}',
                 'avg_loss': f'{total_loss / (batch_idx - start_step + 1):.4f}',
-                'lr': f'{scheduler.get_last_lr()[0]:.2e}'
+                'lr': f'{scheduler.get_last_lr()[0]:.2e}',
+                "Δ": delta
                 # 'lr': str(CONFIG.LEARNING_RATE)
             })
-            
+
             if CONFIG.AUTOSAVE_EVERY_N_STEPS > 0 and (batch_idx + 1) % CONFIG.AUTOSAVE_EVERY_N_STEPS == 0:
                 state = {
                     'epoch': epoch, 'step': batch_idx + 1, 'loss': current_loss,
@@ -91,7 +98,7 @@ def main():
     # --- Инициализация компонентов ---
     print("📂 Загрузка данных...")
     clean_meta_path = CONFIG.BASE_DATA_DIR / f"CLEAN_{CONFIG.FINAL_METADATA_FILE.name}"
-    dataset = HierarchicalTripletDataset(metadata_file=str(clean_meta_path if clean_meta_path.exists() else CONFIG.FINAL_METADATA_FILE))
+    dataset = Dataset(metadata_file=str(clean_meta_path if clean_meta_path.exists() else CONFIG.FINAL_METADATA_FILE))
     dataloader = DataLoader(dataset, batch_size=CONFIG.BATCH_SIZE, shuffle=True, collate_fn=collate_for_hierarchical, num_workers=4, pin_memory=True)
 
     print("🤖 Инициализация модели...")

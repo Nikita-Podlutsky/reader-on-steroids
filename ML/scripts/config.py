@@ -55,16 +55,16 @@ class _Config:
         self.PDF_DOWNLOAD_WORKERS = 40
         self.TEXT_EXTRACTION_WORKERS = 8
         self.LLM_WORKERS = 4
-        self.HARD_NEGATIVE_SEARCH_ATTEMPTS = 50
+        self.HARD_NEGATIVE_SEARCH_ATTEMPTS = 500
 
         # --- Параметры обучения ---
-        self.BATCH_SIZE = 2
-        self.ACCUMULATION_STEPS = 1
-        self.LEARNING_RATE = 2e-4
+        self.BATCH_SIZE = 4
+        self.ACCUMULATION_STEPS = 2
+        self.LEARNING_RATE = 2e-5
         self.WEIGHT_DECAY = 0.01
         self.NUM_EPOCHS = 10
         self.WARMUP_STEPS = 100
-        self.MARGIN = 0.5
+        self.MARGIN = 0.2
         self.SAVE_EVERY_EPOCH = 1
         
         # --- QLoRA для QueryEncoder ---
@@ -159,8 +159,8 @@ class _Config:
         self.QUERY_MODEL_MAX_LEN = 512
         
         # Максимальное количество предложений для Document Encoder
-        self.MAX_SENTENCES = 1024
-        
+        self.MAX_SENTENCES = 256
+
         # Размерность выходов Query и Document энкодеров. 
         # Проектируем так, чтобы они всегда были равны размерности Longformer для совместимости.
         self.FINAL_QUERY_DIM = self.LONGFORMER_DIM

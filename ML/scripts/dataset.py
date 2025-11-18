@@ -5,15 +5,15 @@ import torch
 from torch.utils.data import Dataset
 import json
 from transformers import AutoTokenizer
-
+from pathlib import Path
 # ==============================================================================
 # 1. КОНФИГУРАЦИЯ
 # ==============================================================================
-# Импортируем наш новый единый "умный" конфиг
-from config import CONFIG
 
+from config import CONFIG
+from sklearn.metrics.pairwise import cosine_similarity
 # ==============================================================================
-# 2. HIERARCHICAL DATASET (Переписанная версия)
+# 2.1 HIERARCHICAL DATASET
 # ==============================================================================
 
 class HierarchicalTripletDataset(Dataset):
@@ -84,6 +84,117 @@ class HierarchicalTripletDataset(Dataset):
             'positive': {'embeddings': positive_embeddings, 'attention_mask': positive_mask},
             'negative': {'embeddings': negative_embeddings, 'attention_mask': negative_mask}
         }
+
+
+
+
+
+# ==============================================================================
+# 2.2 HIERARCHICAL DATASET (Переписанная версия)
+# ==============================================================================
+
+POOL_FILE = Path("doc_pool.pt")          # 10k×384
+
+
+class HierarchicalTripletDataset2(Dataset):
+    """
+    Online Hard Negative Mining прямо в __getitem__:
+    - anchor & positive берём из файла метаданных (как раньше)
+    - negative = самый далёкий из 500 случайных кандидатов (argmin)
+    """
+    def __init__(self,
+                 metadata_file: str,
+                 pool_file: str = str(POOL_FILE),
+                 pool_size: int = None,
+                 num_cand: int = 5000,
+                 device: str = "cpu"):
+        super().__init__()
+
+        # 1. метаданные (triplets пути)
+        with open(metadata_file, encoding="utf-8") as fp:
+            self.metadata = json.load(fp)
+
+        # 2. предкодированный пул документов (mean по предложениям)
+        self.doc_pool = torch.load(pool_file).to(device)        # N×384
+        self.pool_size = len(self.doc_pool) if pool_size is None else pool_size
+        self.num_cand = num_cand
+        self.device = device
+
+        # 3. токенизатор запросов (BGE-small)
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            CONFIG.QUERY_MODEL_NAME, trust_remote_code=True
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    # ---------------------------------------------------------------------------------
+    def __len__(self):
+        return len(self.metadata)
+
+    # ---------------------------------------------------------------------------------
+    def __getitem__(self, idx: int):
+        """Возвращает dict с query, anchor, positive, negative (все тензоры)"""
+        item = self.metadata[idx]
+
+        # 1. query (токенизируем на месте)
+        query_text = item["query"]
+        tok = self.tokenizer(
+            query_text,
+            max_length=CONFIG.QUERY_MODEL_MAX_LEN,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        query = {
+            "input_ids": tok["input_ids"].squeeze(0),
+            "attention_mask": tok["attention_mask"].squeeze(0),
+        }
+        if "token_type_ids" in tok:
+            query["token_type_ids"] = tok["token_type_ids"].squeeze(0)
+
+        # 2. anchor & positive (загружаем .pt файлы)
+        anchor = torch.load(item["anchor_path"]).to(self.device)
+        positive = torch.load(item["positive_path"]).to(self.device)
+
+        # 3. ONLINE HARD NEGATIVE MINING
+        negative = self._get_hard_negative(anchor)
+
+        # 4. маски внимания (просто 1, без паддинга)
+        anchor_mask = torch.ones(anchor.shape[0], dtype=torch.long, device=self.device)
+        pos_mask = torch.ones(positive.shape[0], dtype=torch.long, device=self.device)
+        neg_mask = torch.ones(negative.shape[0], dtype=torch.long, device=self.device)
+
+        return {
+            "query": query,
+            "anchor": {"embeddings": anchor, "attention_mask": anchor_mask},
+            "positive": {"embeddings": positive, "attention_mask": pos_mask},
+            "negative": {"embeddings": negative, "attention_mask": neg_mask},
+        }
+
+    # ---------------------------------------------------------------------------------
+    @torch.no_grad()
+    def _get_hard_negative(self, anchor: torch.Tensor) -> torch.Tensor:
+        """
+        Выбираем самого ДАЛЁКОГO (argmin cos_sim) из num_cand случайных документов.
+        anchor: S×384  (mean pooling делаем на лету)
+        return: N×384 тензор предложений hardest-документа
+        """
+        # mean-представление anchor (1×384)
+        anc_mean = anchor.mean(0, keepdim=True)                       # 1×384
+
+        # 500 случайных индексов (без повторов)
+        cand_idx = torch.randperm(self.pool_size, device=self.device)[:self.num_cand]
+        cand_embs = self.doc_pool[cand_idx]                           # 500×384
+
+        # косинусное сходство (чем МЕНЬШЕ - тем ДАЛЬШЕ)
+        scores = cosine_similarity(anc_mean.cpu().numpy(), cand_embs.cpu().numpy())[0]  # 500
+        hardest_abs_idx = cand_idx[scores.argmin()].item()            # индекс в pool
+
+        # загружаем сам .pt файл hardest-документа
+        hardest_meta = self.metadata[hardest_abs_idx]
+        negative = torch.load(hardest_meta["anchor_path"]).to(self.device)
+        return negative
 
 # ==============================================================================
 # 3. COLLATE FUNCTION (Остается БЕЗ ИЗМЕНЕНИЙ)
