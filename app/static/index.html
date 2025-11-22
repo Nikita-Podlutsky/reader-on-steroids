@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Котодекс: Статичный Граф</title>
+    <title>Kotodex: Exploration</title>
     <script src="https://unpkg.com/force-graph"></script>
     <style>
         body { margin: 0; background: #050505; color: #eee; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
+        /* --- UI --- */
         #search-overlay {
             position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0,0,0,0.85); padding: 15px; border-radius: 12px;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px;
             border: 1px solid #333; display: flex; gap: 10px; align-items: center;
             backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
@@ -22,250 +23,279 @@
         button {
             background: #00ff88; border: none; padding: 12px 25px; color: #000;
             border-radius: 6px; cursor: pointer; font-weight: 800; letter-spacing: 1px;
-            transition: all 0.2s;
+            transition: all 0.2s; text-transform: uppercase;
         }
         button:hover { background: #00cc6a; transform: scale(1.05); }
-        
+        button:disabled { background: #333; color: #666; }
+
+        #stats {
+            position: absolute; top: 20px; right: 20px; z-index: 95;
+            color: #666; font-size: 12px; text-align: right; pointer-events: none;
+        }
+
         /* SIDEBAR */
         #sidebar {
             position: absolute; right: 0; top: 0; bottom: 0; width: 450px;
-            background: #111; border-left: 1px solid #222;
+            background: #0a0a0a; border-left: 1px solid #222;
             transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
             display: flex; flex-direction: column; z-index: 90; 
             box-shadow: -10px 0 40px rgba(0,0,0,0.8);
         }
         #sidebar.open { transform: translateX(0); }
+        .sb-header { padding: 20px; border-bottom: 1px solid #222; background: #111; }
+        .sb-content { flex: 1; overflow-y: auto; padding: 20px; }
+        .sb-footer { padding: 20px; background: #111; border-top: 1px solid #222; display: flex; gap: 10px; }
         
-        .msg { padding: 12px; margin-bottom: 10px; border-radius: 8px; font-size: 0.95rem; line-height: 1.5; }
-        .msg.user { background: #333; align-self: flex-end; margin-left: 20px; }
-        .msg.ai { background: #0f2a1f; border-left: 3px solid #00ff88; margin-right: 20px; }
-        
+        .msg { padding: 10px; margin-bottom: 10px; border-radius: 8px; font-size: 0.9rem; max-width: 90%; }
+        .msg.user { background: #333; align-self: flex-end; margin-left: auto; color: #fff; }
+        .msg.ai { background: #0f2a1f; border-left: 2px solid #00ff88; margin-right: auto; color: #ccc; }
+
         /* LEGEND */
         #legend { 
             position: absolute; bottom: 30px; left: 30px; z-index: 95; 
-            display: flex; flex-wrap: wrap; gap: 8px; max-width: 600px;
+            display: flex; flex-wrap: wrap; gap: 8px; max-width: 600px; pointer-events: none;
         }
         .legend-tag { 
             display: inline-flex; align-items: center; gap: 8px; 
-            background: rgba(0,0,0,0.85); padding: 10px 16px; 
-            border-radius: 20px; border: 1px solid #444;
-            backdrop-filter: blur(10px);
+            background: rgba(0,0,0,0.85); padding: 6px 12px; 
+            border-radius: 20px; border: 1px solid #333;
+            backdrop-filter: blur(5px); pointer-events: auto;
         }
-        .legend-dot {
-            width: 12px; height: 12px; border-radius: 50%;
-            box-shadow: 0 0 10px currentColor;
-        }
-        .legend-name {
-            color: #ddd; font-size: 13px; font-weight: 600;
-        }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
     </style>
 </head>
 <body>
 
     <div id="search-overlay">
-        <div style="font-weight:900; color:#00ff88; font-size: 20px;">KOTODEX</div>
-        <input type="text" id="search-input" placeholder="Введите научную тему..." onkeypress="handleKey(event)">
-        <button onclick="runSearch()" id="search-btn">НАЙТИ</button>
+        <div style="font-weight:900; color:#00ff88; font-size: 20px; margin-right:10px;">KOTODEX</div>
+        <input type="text" id="search-input" placeholder="Тема (например: Attention mechanism)" onkeypress="handleKey(event)">
+        <button onclick="runSearch()" id="search-btn">Найти</button>
     </div>
 
+    <div id="stats">Ready</div>
     <div id="graph"></div>
     <div id="legend"></div>
 
+    <!-- SIDEBAR -->
     <div id="sidebar">
-        <div style="padding:20px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; background:#151515;">
-            <h3 style="margin:0; font-size:16px; color:#00ff88; max-width:350px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="sb-title">Статья</h3>
-            <button onclick="closeSidebar()" style="background:transparent; color:#666; padding:5px; border:1px solid #333;">✕</button>
+        <div class="sb-header">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:15px; color:#00ff88; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px;" id="sb-title">Paper</h3>
+                <button onclick="closeSidebar()" style="background:transparent; color:#666; padding:5px; border:none; cursor:pointer; font-size:16px;">✕</button>
+            </div>
+            <button onclick="searchFromCurrent()" style="margin-top:10px; background:#222; color:#ccc; border:1px solid #444; font-size:11px; padding:8px; width:100%; border-radius:4px; cursor:pointer; transition:0.2s;">
+                📡 Найти похожие на эту (New Search)
+            </button>
         </div>
-        <div style="flex:1; overflow-y:auto; padding:20px;">
-            <div style="font-size:11px; color:#666; margin-bottom:5px; font-weight:bold;">АННОТАЦИЯ</div>
-            <div id="sb-abstract" style="background:#1a1a1a; padding:15px; border-radius:8px; color:#ccc; line-height:1.6; font-size:14px; border-left:3px solid #444;">...</div>
+        <div class="sb-content">
+            <div style="font-size:10px; color:#666; font-weight:bold; letter-spacing:1px;">ABSTRACT</div>
+            <div id="sb-abstract" style="background:#1a1a1a; padding:15px; border-radius:6px; color:#bbb; line-height:1.5; font-size:13px; border-left:2px solid #444; min-height: 50px; margin-top:5px;">...</div>
             
-            <div style="margin-top:30px; font-size:11px; color:#666; font-weight:bold;">AI АССИСТЕНТ</div>
+            <div style="margin-top:20px; font-size:10px; color:#666; font-weight:bold; letter-spacing:1px;">CHAT</div>
             <div id="chat-history" style="height:300px; overflow-y:auto; margin-top:10px; display:flex; flex-direction:column;"></div>
         </div>
-        <div style="padding:20px; background:#151515; border-top:1px solid #333; display:flex; gap:10px;">
-            <input id="chat-input" type="text" placeholder="Вопрос по статье..." style="flex:1; background:#222; border:none; padding:12px; color:white; border-radius:6px;">
-            <button onclick="sendChat()" style="padding:0 15px;">➤</button>
+        <div class="sb-footer">
+            <input id="chat-input" type="text" placeholder="Вопрос..." onkeypress="if(event.key==='Enter') sendChat()" style="flex:1; background:#222; border:none; padding:10px; color:white; border-radius:4px; outline:none;">
+            <button onclick="sendChat()" style="padding:0 15px; font-size:12px;">➤</button>
         </div>
     </div>
 
     <script>
-        let allData = { nodes: [], links: [], topics: [] };
-        let visibleNodeIds = new Set();
+        // === DATA STATE ===
+        let allNodes = [];       // Вся база (50 статей), загруженная с сервера
+        let visibleNodeIds = new Set(); // То, что сейчас на экране
+        let generatedLinks = []; // Связи, которые мы строим сами при клике
+        
         let currentPaper = null;
         let chatHistory = [];
 
-        // Инициализация графа с правильными настройками
+        // === SETUP GRAPH ===
         const Graph = ForceGraph()
             (document.getElementById('graph'))
             .backgroundColor('#050505')
-            .nodeLabel(node => `<div style="background:rgba(0,0,0,0.9); padding:8px; border-radius:4px; max-width:200px;">${node.label}</div>`)
-            .nodeColor(n => n.color)
-            .nodeVal(n => n.val || 8) // Размер узла
-            .nodeRelSize(0.2) // Базовый множитель размера
+            .nodeCanvasObject((node, ctx, globalScale) => {
+                const size = node.val ? (node.val / 2) : 4;
+                const fontSize = 12 / globalScale;
+                
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
+                ctx.fillStyle = node.color;
+                ctx.fill();
+
+                // Обводка для выбранной
+                if (currentPaper && node.id === currentPaper.id) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2 / globalScale;
+                    ctx.stroke();
+                }
+
+                // Текст (только если близко или это Root)
+                if (globalScale > 1.2 || node.is_root) {
+                    const label = node.label.length > 30 ? node.label.substring(0,30)+'...' : node.label;
+                    ctx.font = `${fontSize}px Sans-Serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // Подложка под текст
+                    const w = ctx.measureText(label).width;
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(node.x - w/2 - 2, node.y + size + 2, w + 4, fontSize + 4);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(label, node.x, node.y + size + fontSize/2 + 4);
+                }
+            })
+            .nodePointerAreaPaint((node, color, ctx) => {
+                const size = node.val ? (node.val / 2) : 4;
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, size + 6, 0, 2 * Math.PI, false);
+                ctx.fill();
+            })
+            // Отключаем физику (узлы стоят там, где сказал UMAP)
+            .d3Force('charge', null)
+            .d3Force('link', null)
+            .d3Force('center', null)
             .linkColor(() => '#333')
-            .linkWidth(1.5)
-            .onNodeClick(handleNodeClick)
-            .d3Force('charge', null) // Отключаем отталкивание
-            .d3Force('link', null)   // Отключаем притяжение связей
-            .d3Force('center', null) // Отключаем центрирование
-            .cooldownTicks(0)        // Сразу останавливаем симуляцию
-            .warmupTicks(0);         // Не прогреваем
+            .linkWidth(1)
+            .onNodeClick(handleNodeClick);
+
+        // === LOGIC ===
 
         async function runSearch() {
             const query = document.getElementById('search-input').value;
             if (!query) return;
 
             const btn = document.getElementById('search-btn');
-            btn.innerText = "⏳"; btn.disabled = true;
+            const stat = document.getElementById('stats');
+            btn.innerText = "..."; btn.disabled = true;
 
             try {
+                // 1. Запрос к бэкенду
                 const res = await fetch('/analyze_graph', {
                     method: 'POST', 
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ query })
                 });
                 const data = await res.json();
-                
-                console.log('Received data:', data); // Debug
-                
-                if(data.nodes.length === 0) {
+
+                if (!data.nodes || data.nodes.length === 0) {
                     alert("Ничего не найдено.");
-                } else {
-                    allData = data;
-                    visibleNodeIds.clear();
-
-                    // Показываем только корневые узлы (лидеров тем)
-                    allData.nodes.forEach(n => {
-                        // ВАЖНО: проверяем что координаты существуют
-                        if (n.x === undefined || n.y === undefined) {
-                            console.warn('Node without coords:', n);
-                            n.x = Math.random() * 400 - 200;
-                            n.y = Math.random() * 400 - 200;
-                        }
-                        
-                        // Фиксируем позицию
-                        n.fx = n.x; 
-                        n.fy = n.y;
-                        
-                        if (n.is_root) {
-                            visibleNodeIds.add(n.id);
-                        }
-                    });
-
-                    console.log('Visible root nodes:', visibleNodeIds.size); // Debug
-                    updateGraph();
-                    buildLegend(data.topics || []);
+                    return;
                 }
-            } catch (e) { 
-                console.error('Search error:', e); 
-                alert("Ошибка сервера: " + e.message); 
-            }
-            
-            btn.innerText = "НАЙТИ"; btn.disabled = false;
-        }
 
-        function updateGraph() {
-            // Фильтруем узлы
-            const nodes = allData.nodes.filter(n => visibleNodeIds.has(n.id));
-            
-            // Фильтруем связи
-            const links = allData.links.filter(l => {
-                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-                return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
-            });
+                // 2. Сохраняем "Карту Мира"
+                allNodes = data.nodes.map(n => ({
+                    ...n,
+                    fx: n.x, // Закрепляем намертво
+                    fy: n.y
+                }));
 
-            console.log('Updating graph:', nodes.length, 'nodes,', links.length, 'links');
-            Graph.graphData({ nodes, links });
-            
-            // Центрируем камеру
-            if (nodes.length > 0) {
-                Graph.zoomToFit(400, 50);
+                // 3. Сброс состояния
+                visibleNodeIds.clear();
+                generatedLinks = [];
+                
+                // 4. Показываем только Лидеров (Roots)
+                allNodes.forEach(n => {
+                    if (n.is_root) visibleNodeIds.add(n.id);
+                });
+
+                // 5. Рисуем
+                updateGraphView();
+                buildLegend(data.topics);
+                stat.innerText = `Loaded ${allNodes.length} papers. Showing roots.`;
+
+                // Зум
+                setTimeout(() => Graph.zoomToFit(1000, 50), 500);
+
+            } catch (e) {
+                console.error(e);
+                alert("Error: " + e.message);
+            } finally {
+                btn.innerText = "НАЙТИ"; btn.disabled = false;
             }
         }
 
         function handleNodeClick(node) {
-            // 1. Открываем сайдбар
+            // 1. Открываем инфу
             openSidebar(node);
 
-            // 2. Раскрываем соседей
-            const neighbors = allData.links
-                .filter(l => {
-                    const s = (typeof l.source === 'object') ? l.source.id : l.source;
-                    const t = (typeof l.target === 'object') ? l.target.id : l.target;
-                    return s === node.id || t === node.id;
-                })
-                .map(l => {
-                    const s = (typeof l.source === 'object') ? l.source.id : l.source;
-                    const t = (typeof l.target === 'object') ? l.target.id : l.target;
-                    return s === node.id ? t : s;
-                });
+            // 2. ЛОГИКА РАДИУСА (Фонарик)
+            // Находим скрытые ноды
+            const hiddenNodes = allNodes.filter(n => !visibleNodeIds.has(n.id));
+            
+            if (hiddenNodes.length === 0) return;
 
-            let added = false;
-            neighbors.forEach(nid => {
-                if (!visibleNodeIds.has(nid)) {
-                    visibleNodeIds.add(nid);
-                    added = true;
-                }
+            // Считаем дистанцию от нажатой ноды до всех скрытых
+            // (У нас есть node.x и node.y, спасибо UMAP)
+            hiddenNodes.forEach(n => {
+                n._tempDist = Math.hypot(n.x - node.x, n.y - node.y);
             });
 
-            if (added) {
-                allData.nodes.forEach(n => {
-                    if (visibleNodeIds.has(n.id)) {
-                        n.fx = n.x; 
-                        n.fy = n.y;
-                    }
+            // Сортируем: ближайшие первыми
+            hiddenNodes.sort((a, b) => a._tempDist - b._tempDist);
+
+            // Берем ТОП-5 ближайших
+            const toReveal = hiddenNodes.slice(0, 6);
+
+            if (toReveal.length > 0) {
+                toReveal.forEach(neighbor => {
+                    visibleNodeIds.add(neighbor.id);
+                    // Строим визуальную связь "Откуда пришел"
+                    generatedLinks.push({
+                        source: node.id,
+                        target: neighbor.id
+                    });
                 });
-                updateGraph();
+                
+                // Обновляем картинку
+                updateGraphView();
+                document.getElementById('stats').innerText = `Showing ${visibleNodeIds.size} / ${allNodes.length} nodes`;
             }
         }
 
-        function buildLegend(topics) {
-            const div = document.getElementById('legend');
-            if (!topics || topics.length === 0) {
-                div.innerHTML = '';
-                return;
-            }
+        function updateGraphView() {
+            const nodes = allNodes.filter(n => visibleNodeIds.has(n.id));
             
-            div.innerHTML = topics.map(t => `
-                <div class="legend-tag">
-                    <div class="legend-dot" style="background:${t.color};"></div>
-                    <span class="legend-name">${t.name}</span>
-                </div>
-            `).join('');
+            // Рисуем только наши сгенерированные связи
+            // Но фильтруем их, чтобы оба конца были видимы
+            const links = generatedLinks.filter(l => 
+                visibleNodeIds.has(l.source) && visibleNodeIds.has(l.target)
+            );
+
+            Graph.graphData({ nodes, links });
         }
 
+        // === UI HELPERS ===
+        
         async function openSidebar(node) {
             currentPaper = node;
             document.getElementById('sidebar').classList.add('open');
             document.getElementById('sb-title').innerText = node.label;
             
             const absBox = document.getElementById('sb-abstract');
-            absBox.innerText = "Перевод...";
-            absBox.style.opacity = "0.5";
+            absBox.innerHTML = `<span style="color:#555">Перевод...</span><br>${node.abstract.slice(0,150)}...`;
             
-            document.getElementById('chat-history').innerHTML = '';
             chatHistory = [];
+            document.getElementById('chat-history').innerHTML = '';
 
             try {
                 const res = await fetch('/translate', {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'},
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ text: node.abstract })
                 });
                 const data = await res.json();
-                absBox.innerText = data.translation || node.abstract;
-                absBox.style.opacity = "1";
-            } catch(e) { 
-                console.error('Translation error:', e);
-                absBox.innerText = node.abstract;
-                absBox.style.opacity = "1";
-            }
+                absBox.innerText = data.translation;
+            } catch(e) { absBox.innerText = node.abstract; }
         }
 
-        function closeSidebar() {
-            document.getElementById('sidebar').classList.remove('open');
+        function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+
+        function searchFromCurrent() {
+            if(!currentPaper) return;
+            document.getElementById('search-input').value = currentPaper.label;
+            closeSidebar();
+            runSearch();
         }
 
         async function sendChat() {
@@ -275,34 +305,37 @@
             
             const hDiv = document.getElementById('chat-history');
             hDiv.innerHTML += `<div class="msg user">${val}</div>`;
-            input.value = '';
-            
+            input.value = ''; hDiv.scrollTop = hDiv.scrollHeight;
+
             try {
                 const res = await fetch('/chat', {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'},
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ 
-                        paper_text: currentPaper.full_text || currentPaper.abstract, 
-                        history: chatHistory, 
+                        paper_text: currentPaper.full_text || currentPaper.abstract,
+                        history: chatHistory,
                         question: val 
                     })
                 });
                 const data = await res.json();
                 hDiv.innerHTML += `<div class="msg ai">${data.answer}</div>`;
-                chatHistory.push(
-                    {role:"user", content:val}, 
-                    {role:"assistant", content:data.answer}
-                );
+                chatHistory.push({role:"user", content:val}, {role:"assistant", content:data.answer});
                 hDiv.scrollTop = hDiv.scrollHeight;
-            } catch(e) {
-                console.error('Chat error:', e);
-                hDiv.innerHTML += `<div class="msg ai">Ошибка: ${e.message}</div>`;
-            }
+            } catch(e) { hDiv.innerHTML += `<div class="msg ai">Error</div>`; }
         }
-        
-        function handleKey(e) { 
-            if(e.key === 'Enter') runSearch(); 
+
+        function buildLegend(topics) {
+            const d = document.getElementById('legend');
+            if(!topics) { d.innerHTML=''; return; }
+            d.innerHTML = topics.map(t => `
+                <div class="legend-tag">
+                    <div class="legend-dot" style="background:${t.color}"></div>
+                    <span>${t.name}</span>
+                </div>
+            `).join('');
         }
+
+        function handleKey(e) { if(e.key==='Enter') runSearch(); }
+        window.addEventListener('resize', () => { Graph.width(window.innerWidth); Graph.height(window.innerHeight); });
     </script>
 </body>
 </html>

@@ -3,3 +3,4 @@ models_cache
 checkpoints
 .vscode
 .env
+arxiv_pdfs/*
