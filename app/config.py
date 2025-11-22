@@ -7,7 +7,11 @@ load_dotenv()
 
 # === ML SETTINGS ===
 # (тут твои настройки ключей и моделей оставляем как есть)
-OLLAMA_MODEL = "gemma3"
+# Используем быстрые модели для разных задач
+OLLAMA_MODEL = "gemma3:12b"  # Мощная модель для общего использования
+OLLAMA_MODEL_FAST = "gemma3:12b"  # Мощная модель для переводов
+OLLAMA_MODEL_CHAT = "gemma3:12b"  # Мощная модель для чата
+OLLAMA_HOST = "http://localhost:11434"  # Локальный Ollama сервер
 SENTENCE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 MAX_TOPICS = 5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
