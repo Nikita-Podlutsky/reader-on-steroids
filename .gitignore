@@ -1,13 +1,5 @@
-arxiv_pdfs.zip
-arxiv_pdfs
-triplets_data/
-temp/
 .venv
-ML/arxiv-metadata-oai-snapshot.json
-ML/scripts/__pycache__
-__pycache__
+models_cache
 checkpoints
-ML/checkpoints_lstm
+.vscode
 .env
-.vscodeMl/triplets_data/sentence_embeddings_pt/ 
-Ml/triplets_data/sentence_embeddings_pt/ 
