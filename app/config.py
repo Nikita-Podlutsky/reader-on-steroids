@@ -16,6 +16,23 @@ SENTENCE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 MAX_TOPICS = 5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# OpenRouter.ai настройки (бесплатный анонимный API)
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = "google/gemma-2-2b-it:free"  # Бесплатная модель
+OPENROUTER_HEADERS = {
+    "Content-Type": "application/json",
+    "HTTP-Referer": "http://localhost:8000",  # Для анонимного доступа
+    "X-Title": "Kotodex Research Explorer"
+}
+
+# Переводчик настройки
+USE_GOOGLE_TRANSLATE = True  # Использовать Google Translate вместо LLM
+
+# Google AI Studio (Gemini) настройки
+GOOGLE_AI_STUDIO_API_KEY = os.getenv("GOOGLE_AI_STUDIO_API_KEY", "")
+GOOGLE_AI_STUDIO_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+GOOGLE_AI_STUDIO_MODEL = "gemini-flash-lite-latest"
+
 # === PATHS (ИСПРАВЛЕНО) ===
 
 # 1. Получаем папку, где лежит ЭТОТ файл (app/config.py -> папка app)

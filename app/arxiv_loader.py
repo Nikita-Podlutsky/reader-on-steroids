@@ -78,17 +78,95 @@ class ArxivLoader:
         full_text = ""
         try:
             # fitz очень быстр, чтение с диска здесь не узкое место
+            # Используем более безопасный режим парсинга для проблемных PDF
             with fitz.open(file_path) as doc:
-                # Сразу генератором собираем текст
-                full_text = " ".join(page.get_text() for page in doc)
+                # Собираем текст постранично с обработкой ошибок
+                page_texts = []
+                for page_num, page in enumerate(doc):
+                    try:
+                        # Пробуем стандартный метод
+                        page_text = page.get_text()
+                        if page_text:
+                            page_texts.append(page_text)
+                    except (RuntimeError, ValueError, AttributeError) as page_error:
+                        # Обрабатываем специфичные ошибки MuPDF (ExtGState, синтаксические ошибки)
+                        error_str = str(page_error).lower()
+                        if 'extgstate' in error_str or 'syntax error' in error_str or 'resource' in error_str:
+                            # Для проблемных PDF пробуем альтернативные методы
+                            try:
+                                # Метод 1: Извлечение через словари (более устойчивый)
+                                page_text = page.get_text("dict")
+                                if page_text and 'blocks' in page_text:
+                                    text_parts = []
+                                    for block in page_text['blocks']:
+                                        if 'lines' in block:
+                                            for line in block['lines']:
+                                                if 'spans' in line:
+                                                    for span in line['spans']:
+                                                        if 'text' in span:
+                                                            text_parts.append(span['text'])
+                                    if text_parts:
+                                        page_texts.append(' '.join(text_parts))
+                                        continue
+                            except Exception:
+                                pass
+                            
+                            try:
+                                # Метод 2: Пробуем извлечь текст через rawdict (более низкоуровневый)
+                                page_text = page.get_text("rawdict")
+                                if page_text and 'blocks' in page_text:
+                                    text_parts = []
+                                    for block in page_text['blocks']:
+                                        if isinstance(block, dict) and 'lines' in block:
+                                            for line in block['lines']:
+                                                if isinstance(line, dict) and 'spans' in line:
+                                                    for span in line['spans']:
+                                                        if isinstance(span, dict) and 'text' in span:
+                                                            text_parts.append(span['text'])
+                                    if text_parts:
+                                        page_texts.append(' '.join(text_parts))
+                                        continue
+                            except Exception:
+                                pass
+                            
+                            # Если ничего не помогло, пропускаем страницу
+                            print(f"Warning: Skipping page {page_num+1}/{len(doc)} in {paper_id} due to PDF parsing error (ExtGState/syntax)")
+                        else:
+                            # Другие ошибки - просто пропускаем страницу
+                            print(f"Warning: Skipping page {page_num+1}/{len(doc)} in {paper_id}: {page_error}")
+                    except Exception as page_error:
+                        # Общая обработка остальных ошибок
+                        print(f"Warning: Error on page {page_num+1}/{len(doc)} in {paper_id}: {page_error}")
+                        continue
+                
+                full_text = " ".join(page_texts)
             
             full_text = self.clean_text(full_text)
         except Exception as e:
             print(f"Failed to parse PDF {paper_id}: {e}")
+            # Пробуем альтернативный метод через pypdf (если доступен)
+            try:
+                import pypdf
+                with open(file_path, 'rb') as f:
+                    pdf_reader = pypdf.PdfReader(f)
+                    full_text = " ".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
+                    full_text = self.clean_text(full_text)
+                    print(f"Successfully parsed {paper_id} using pypdf fallback")
+            except ImportError:
+                # pypdf не установлен, используем fallback
+                pass
+            except Exception as fallback_error:
+                print(f"Fallback parsing also failed for {paper_id}: {fallback_error}")
 
         # Fallback если текст пустой или битый
         if len(full_text) < 500:
-            full_text = f"{paper_data['title']}. {paper_data['abstract']}"
+            if full_text:
+                # Если есть хотя бы немного текста, добавляем к абстракту
+                full_text = f"{paper_data['title']}. {paper_data['abstract']}. {full_text[:1000]}"
+            else:
+                # Если текста совсем нет, используем только заголовок и абстракт
+                full_text = f"{paper_data['title']}. {paper_data['abstract']}"
+                print(f"Warning: {paper_id} - using abstract only (PDF parsing failed or empty)")
 
         paper_data['full_text'] = full_text
         return paper_data

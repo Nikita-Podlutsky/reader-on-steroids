@@ -8,12 +8,27 @@ from hdbscan import HDBSCAN
 from app.config import MAX_TOPICS
 
 def generate_neon_colors(n):
+    """Генерирует пастельные цвета в стиле Anthropic"""
     colors = []
+    # Пастельная палитра: мягкие оттенки
+    pastel_palette = [
+        '#fce7f3',  # мягкий розовый
+        '#dbeafe',  # мягкий голубой
+        '#ede9fe',  # мягкий фиолетовый
+        '#f0fdf4',  # мягкий зеленый
+        '#fffbeb',  # мягкий желтый
+        '#fef2f2',  # мягкий красный
+        '#f0f9ff',  # небесно-голубой
+        '#faf5ff',  # лавандовый
+        '#ecfdf5',  # мятный
+        '#fff7ed',  # персиковый
+    ]
+    
     for i in range(n):
-        hue = i / max(n, 1)
-        rgb = colorsys.hls_to_rgb(hue, 0.6, 1.0)
-        hex_color = '#%02x%02x%02x' % tuple(int(c * 255) for c in rgb)
-        colors.append(hex_color)
+        # Используем палитру с циклическим повторением
+        color = pastel_palette[i % len(pastel_palette)]
+        colors.append(color)
+    
     return colors
 
 async def process_graph_analysis(engine, query, papers):
@@ -38,13 +53,18 @@ async def process_graph_analysis(engine, query, papers):
     # 4. Получаем Scores (важность статьи)
     scores = await asyncio.to_thread(engine.calculate_relevance, query, papers, base_tensor)
     print("scores")
+    
+    # Добавляем логирование времени
+    import time
+    t0 = time.time()
+    
     # 5. Кластеризация (BERTopic)
-    # Используем custom_vectors, чтобы кластеры совпадали с визуальной картой
+    print("Starting BERTopic clustering...")
     umap_model = UMAP(n_neighbors=min(15, len(papers)-1), n_components=5, min_dist=0.0, metric='cosine', random_state=42)
     hdbscan_model = HDBSCAN(min_cluster_size=2, metric='euclidean', cluster_selection_method='eom', prediction_data=True)
     
     topic_model = BERTopic(
-        embedding_model=None, # Отключаем встроенный, подадим свои векторы
+        embedding_model=None,
         umap_model=umap_model,
         hdbscan_model=hdbscan_model,
         nr_topics=MAX_TOPICS
@@ -52,6 +72,8 @@ async def process_graph_analysis(engine, query, papers):
     
     # Обучаем BERTopic на твоих векторах
     topics, _ = topic_model.fit_transform(texts, embeddings=custom_vectors)
+    t1 = time.time()
+    print(f"BERTopic clustering took: {t1-t0:.2f}s")
     
     # Обработка выбросов (-1)
     unique_topics = sorted(set(topics))
@@ -60,17 +82,20 @@ async def process_graph_analysis(engine, query, papers):
         topics = [max_topic + 1 if t == -1 else t for t in topics]
 
     # 6. Проекция UMAP (2D координаты)
-    # Строим карту сразу для всех, фиксируем мир
+    print("Starting 2D UMAP projection...")
+    t2 = time.time()
     coords_2d = UMAP(
         n_neighbors=min(15, len(papers)-1),
         n_components=2,
-        min_dist=0.2,     # Чуть побольше, чтобы не слипались
+        min_dist=0.2,
         metric='cosine',
         random_state=42
     ).fit_transform(custom_vectors)
+    t3 = time.time()
+    print(f"2D UMAP projection took: {t3-t2:.2f}s")
 
     # 7. Анализ иерархии (Кто главный?)
-    clusters_map = {} # topic_id -> list of indices
+    clusters_map = {}
     for i, t_id in enumerate(topics):
         t_id = int(t_id)
         if t_id not in clusters_map: clusters_map[t_id] = []
@@ -83,8 +108,12 @@ async def process_graph_analysis(engine, query, papers):
         roots_map[t_id] = leader_idx
 
     # Нейминг тем
+    print("Generating cluster names...")
+    t4 = time.time()
     cluster_titles = {tid: [papers[i]['title'] for i in idxs] for tid, idxs in clusters_map.items()}
     topic_names = await engine.name_clusters(cluster_titles)
+    t5 = time.time()
+    print(f"Cluster naming took: {t5-t4:.2f}s")
     
     palette = generate_neon_colors(len(clusters_map))
     sorted_topics = sorted(clusters_map.keys())
@@ -100,10 +129,19 @@ async def process_graph_analysis(engine, query, papers):
         # Считаем дистанцию от текущей точки до Лидера её группы
         dist_to_root = float(np.linalg.norm(coords_2d[i] - coords_2d[root_idx]))
 
+        # Извлекаем год из published (формат: "YYYY-MM-DD" или просто год)
+        year = None
+        if 'published' in p:
+            try:
+                year = int(p['published'].split('-')[0]) if '-' in p['published'] else int(p['published'][:4])
+            except:
+                year = None
+        
         nodes.append({
             "id": p['id'],
             "label": p['title'],
             "abstract": p['abstract'],
+            "year": year,  # Год публикации для фильтрации
             
             # Координаты (посчитаны один раз навечно)
             "x": float(coords_2d[i][0]) * 20,

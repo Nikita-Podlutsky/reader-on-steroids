@@ -3,161 +3,696 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kotodex: Exploration</title>
+    <title>Kotodex: Research Explorer</title>
     <script src="https://unpkg.com/force-graph"></script>
     <style>
-        body { margin: 0; background: #050505; color: #eee; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-        
-        /* --- UI --- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Темная тема */
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #252525;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --text-muted: #808080;
+            --border-color: #333333;
+            --accent-color: #9333ea;
+            --accent-hover: #7c3aed;
+            --shadow-soft: rgba(0, 0, 0, 0.3);
+            --shadow-medium: rgba(0, 0, 0, 0.5);
+        }
+
+        /* Поисковая панель */
         #search-overlay {
-            position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px;
-            border: 1px solid #333; display: flex; gap: 10px; align-items: center;
-            backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            z-index: 100;
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 20px 24px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px var(--shadow-soft);
+            border: 1px solid var(--border-color);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            min-width: 500px;
         }
+
+        #search-overlay .logo {
+            font-weight: 600;
+            font-size: 18px;
+            color: var(--accent-color);
+            letter-spacing: -0.5px;
+        }
+
         #search-input {
-            background: #1a1a1a; color: #fff; border: 1px solid #444;
-            padding: 12px; border-radius: 6px; width: 300px; font-size: 16px; outline: none;
+            flex: 1;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1.5px solid var(--border-color);
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.2s ease;
         }
-        #search-input:focus { border-color: #00ff88; }
+
+        #search-input:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-secondary);
+            box-shadow: 0 0 0 4px rgba(147, 51, 234, 0.2);
+        }
+
+        #search-input::placeholder {
+            color: var(--text-muted);
+        }
+
         button {
-            background: #00ff88; border: none; padding: 12px 25px; color: #000;
-            border-radius: 6px; cursor: pointer; font-weight: 800; letter-spacing: 1px;
-            transition: all 0.2s; text-transform: uppercase;
+            background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+            border: none;
+            padding: 12px 24px;
+            color: white;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(147, 51, 234, 0.3);
         }
-        button:hover { background: #00cc6a; transform: scale(1.05); }
-        button:disabled { background: #333; color: #666; }
 
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(147, 51, 234, 0.4);
+        }
+
+        button:disabled {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Фильтры */
+        #filters-panel {
+            position: absolute;
+            top: 100px;
+            left: 24px;
+            z-index: 99;
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px var(--shadow-soft);
+            border: 1px solid var(--border-color);
+            min-width: 280px;
+            display: none;
+        }
+
+        #filters-panel.active {
+            display: block;
+        }
+
+        .filter-section {
+            margin-bottom: 20px;
+        }
+
+        .filter-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .filter-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .year-inputs {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .year-input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1.5px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+        }
+
+        .year-input:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-secondary);
+        }
+
+        .cluster-checkboxes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .cluster-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cluster-checkbox:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .cluster-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+        }
+
+        .cluster-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .cluster-name {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        /* Статистика */
         #stats {
-            position: absolute; top: 20px; right: 20px; z-index: 95;
-            color: #666; font-size: 12px; text-align: right; pointer-events: none;
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            z-index: 95;
+            background: rgba(26, 26, 26, 0.9);
+            backdrop-filter: blur(20px);
+            padding: 12px 20px;
+            border-radius: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 16px var(--shadow-soft);
+            border: 1px solid var(--border-color);
         }
 
-        /* SIDEBAR */
+        /* Граф */
+        #graph {
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg-primary);
+        }
+
+        /* Легенда */
+        #legend {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            z-index: 95;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            max-width: 600px;
+        }
+
+        .legend-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 8px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 8px var(--shadow-soft);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .legend-tag:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--shadow-medium);
+            border-color: var(--accent-color);
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .legend-name {
+            font-size: 13px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Сайдбар */
         #sidebar {
-            position: absolute; right: 0; top: 0; bottom: 0; width: 450px;
-            background: #0a0a0a; border-left: 1px solid #222;
-            transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
-            display: flex; flex-direction: column; z-index: 90; 
-            box-shadow: -10px 0 40px rgba(0,0,0,0.8);
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 480px;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid var(--border-color);
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            z-index: 90;
+            box-shadow: -8px 0 32px var(--shadow-soft);
         }
-        #sidebar.open { transform: translateX(0); }
-        .sb-header { padding: 20px; border-bottom: 1px solid #222; background: #111; }
-        .sb-content { flex: 1; overflow-y: auto; padding: 20px; }
-        .sb-footer { padding: 20px; background: #111; border-top: 1px solid #222; display: flex; gap: 10px; }
-        
-        .msg { padding: 10px; margin-bottom: 10px; border-radius: 8px; font-size: 0.9rem; max-width: 90%; }
-        .msg.user { background: #333; align-self: flex-end; margin-left: auto; color: #fff; }
-        .msg.ai { background: #0f2a1f; border-left: 2px solid #00ff88; margin-right: auto; color: #ccc; }
 
-        /* LEGEND */
-        #legend { 
-            position: absolute; bottom: 30px; left: 30px; z-index: 95; 
-            display: flex; flex-wrap: wrap; gap: 8px; max-width: 600px; pointer-events: none;
+        #sidebar.open {
+            transform: translateX(0);
         }
-        .legend-tag { 
-            display: inline-flex; align-items: center; gap: 8px; 
-            background: rgba(0,0,0,0.85); padding: 6px 12px; 
-            border-radius: 20px; border: 1px solid #333;
-            backdrop-filter: blur(5px); pointer-events: auto;
+
+        .sb-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, #1a1a1a 0%, #252525 100%);
         }
-        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        .sb-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .sb-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 350px;
+        }
+
+        .sb-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sb-close:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .sb-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .sb-section {
+            margin-bottom: 24px;
+        }
+
+        .sb-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .sb-section-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .sb-abstract {
+            background: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: 12px;
+            color: var(--text-primary);
+            line-height: 1.6;
+            font-size: 14px;
+            border-left: 3px solid var(--accent-color);
+            min-height: 50px;
+        }
+
+        .provider-selector {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .provider-selector label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .provider-selector select {
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .provider-selector select:focus {
+            border-color: var(--accent-color);
+        }
+
+        #chat-history {
+            height: 300px;
+            overflow-y: auto;
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .msg {
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 14px;
+            max-width: 85%;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .msg.user {
+            background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+            box-shadow: 0 2px 8px rgba(147, 51, 234, 0.3);
+        }
+
+        .msg.ai {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            margin-right: auto;
+            color: var(--text-primary);
+        }
+
+        .sb-footer {
+            padding: 20px 24px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 12px;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1.5px solid var(--border-color);
+            padding: 12px 16px;
+            color: var(--text-primary);
+            border-radius: 12px;
+            outline: none;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        #chat-input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 4px rgba(147, 51, 234, 0.2);
+        }
+
+        #chat-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .sb-footer button {
+            padding: 12px 20px;
+            font-size: 14px;
+        }
+
+        /* Кнопка фильтров */
+        #filter-toggle {
+            position: absolute;
+            top: 100px;
+            left: 24px;
+            z-index: 98;
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            padding: 10px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            box-shadow: 0 4px 16px var(--shadow-soft);
+            transition: all 0.2s ease;
+        }
+
+        #filter-toggle:hover {
+            background: var(--bg-secondary);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--shadow-medium);
+        }
+
+        /* Скроллбар */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
     </style>
 </head>
 <body>
-
+    <!-- Поисковая панель -->
     <div id="search-overlay">
-        <div style="font-weight:900; color:#00ff88; font-size: 20px; margin-right:10px;">KOTODEX</div>
-        <input type="text" id="search-input" placeholder="Тема (например: Attention mechanism)" onkeypress="handleKey(event)">
+        <div class="logo">Kotodex</div>
+        <input type="text" id="search-input" placeholder="Поиск научных статей..." onkeypress="handleKey(event)">
         <button onclick="runSearch()" id="search-btn">Найти</button>
     </div>
 
-    <div id="stats">Ready</div>
+    <!-- Кнопка фильтров -->
+    <button id="filter-toggle" onclick="toggleFilters()">🔍 Фильтры</button>
+
+    <!-- Панель фильтров -->
+    <div id="filters-panel">
+        <div class="filter-section">
+            <div class="filter-label">Год публикации</div>
+            <div class="year-inputs">
+                <input type="number" id="year-min" class="year-input" placeholder="От" min="1990" max="2025">
+                <span style="color: var(--text-muted);">—</span>
+                <input type="number" id="year-max" class="year-input" placeholder="До" min="1990" max="2025">
+            </div>
+        </div>
+        <div class="filter-section">
+            <div class="filter-label">Кластеры</div>
+            <div class="cluster-checkboxes" id="cluster-filters">
+                <!-- Заполняется динамически -->
+            </div>
+        </div>
+        <button onclick="applyFilters()" style="width: 100%; margin-top: 12px;">Применить фильтры</button>
+    </div>
+
+    <!-- Статистика -->
+    <div id="stats">Готов к поиску</div>
+
+    <!-- Граф -->
     <div id="graph"></div>
+
+    <!-- Легенда -->
     <div id="legend"></div>
 
-    <!-- SIDEBAR -->
+    <!-- Сайдбар -->
     <div id="sidebar">
         <div class="sb-header">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; font-size:15px; color:#00ff88; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px;" id="sb-title">Paper</h3>
-                <button onclick="closeSidebar()" style="background:transparent; color:#666; padding:5px; border:none; cursor:pointer; font-size:16px;">✕</button>
+            <div class="sb-header-top">
+                <h3 class="sb-title" id="sb-title">Статья</h3>
+                <button class="sb-close" onclick="closeSidebar()">✕</button>
             </div>
-            <button onclick="searchFromCurrent()" style="margin-top:10px; background:#222; color:#ccc; border:1px solid #444; font-size:11px; padding:8px; width:100%; border-radius:4px; cursor:pointer; transition:0.2s;">
-                📡 Найти похожие на эту (New Search)
+            <button onclick="searchFromCurrent()" style="width: 100%; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); font-size: 13px;">
+                🔍 Найти похожие статьи
             </button>
         </div>
         <div class="sb-content">
-            <div style="font-size:10px; color:#666; font-weight:bold; letter-spacing:1px;">ABSTRACT</div>
-            <div id="sb-abstract" style="background:#1a1a1a; padding:15px; border-radius:6px; color:#bbb; line-height:1.5; font-size:13px; border-left:2px solid #444; min-height: 50px; margin-top:5px;">...</div>
-            
-            <div style="margin-top:20px; font-size:10px; color:#666; font-weight:bold; letter-spacing:1px;">CHAT</div>
-            <div id="chat-history" style="height:300px; overflow-y:auto; margin-top:10px; display:flex; flex-direction:column;"></div>
+            <div class="sb-section">
+                <div class="sb-section-label">Аннотация</div>
+                <div class="sb-abstract" id="sb-abstract">Выберите статью для просмотра...</div>
+            </div>
+            <div class="sb-section">
+                <div class="provider-selector">
+                    <label>Провайдер чата:</label>
+                    <select id="chat-provider">
+                        <option value="ollama">Ollama (локальный)</option>
+                        <option value="openrouter">OpenRouter.ai (бесплатный)</option>
+                        <option value="google">Google AI Studio</option>
+                    </select>
+                </div>
+            </div>
+            <div class="sb-section">
+                <div class="sb-section-label">Чат</div>
+                <div id="chat-history"></div>
+            </div>
         </div>
         <div class="sb-footer">
-            <input id="chat-input" type="text" placeholder="Вопрос..." onkeypress="if(event.key==='Enter') sendChat()" style="flex:1; background:#222; border:none; padding:10px; color:white; border-radius:4px; outline:none;">
-            <button onclick="sendChat()" style="padding:0 15px; font-size:12px;">➤</button>
+            <input id="chat-input" type="text" placeholder="Задайте вопрос о статье..." onkeypress="if(event.key==='Enter') sendChat()">
+            <button onclick="sendChat()">➤</button>
         </div>
     </div>
 
     <script>
         // === DATA STATE ===
-        let allNodes = [];       // Вся база (50 статей), загруженная с сервера
-        let visibleNodeIds = new Set(); // То, что сейчас на экране
-        let generatedLinks = []; // Связи, которые мы строим сами при клике
-        
+        let allNodes = [];  // Все узлы (не фильтруются)
+        let visibleNodeIds = new Set(); // Видимые узлы (с учетом фильтров)
+        let generatedLinks = [];
         let currentPaper = null;
         let chatHistory = [];
+        let allTopics = [];
+        let selectedClusters = new Set();
+        let yearMin = null;
+        let yearMax = null;
 
         // === SETUP GRAPH ===
         const Graph = ForceGraph()
             (document.getElementById('graph'))
-            .backgroundColor('#050505')
+            .backgroundColor('#0a0a0a')
             .nodeCanvasObject((node, ctx, globalScale) => {
-                const size = node.val ? (node.val / 2) : 4;
-                const fontSize = 12 / globalScale;
+                // Фиксированный размер узла от значимости (не зависит от зума)
+                const baseSize = Math.max(4, Math.min(20, (node.val || 5) * 0.8));
+                const size = baseSize; // Размер не зависит от globalScale
                 
+                // Фиксированный размер текста
+                const fontSize = 12; // Не зависит от globalScale
+                
+                // Улучшенный контраст - яркие цвета с обводкой
+                ctx.shadowColor = 'rgba(147, 51, 234, 0.5)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+                
+                // Обводка для лучшей видимости
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fill();
+                
+                // Основной узел
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
                 ctx.fillStyle = node.color;
                 ctx.fill();
+                
+                // Яркая обводка для контраста
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
 
                 // Обводка для выбранной
                 if (currentPaper && node.id === currentPaper.id) {
-                    ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 2 / globalScale;
+                    ctx.strokeStyle = '#9333ea';
+                    ctx.lineWidth = 3;
                     ctx.stroke();
                 }
 
-                // Текст (только если близко или это Root)
-                if (globalScale > 1.2 || node.is_root) {
-                    const label = node.label.length > 30 ? node.label.substring(0,30)+'...' : node.label;
-                    ctx.font = `${fontSize}px Sans-Serif`;
+                // Текст (показываем всегда, фиксированный размер)
+                if (globalScale > 0.5) { // Показываем текст при любом разумном зуме
+                    const label = node.label.length > 30 ? node.label.substring(0, 30) + '...' : node.label;
+                    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     
-                    // Подложка под текст
+                    // Подложка под текст с лучшим контрастом
                     const w = ctx.measureText(label).width;
-                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                    ctx.fillRect(node.x - w/2 - 2, node.y + size + 2, w + 4, fontSize + 4);
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = 'rgba(10, 10, 10, 0.9)';
+                    ctx.fillRect(node.x - w/2 - 4, node.y + size + 6, w + 8, fontSize + 8);
                     
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(label, node.x, node.y + size + fontSize/2 + 4);
+                    ctx.fillStyle = '#e0e0e0';
+                    ctx.fillText(label, node.x, node.y + size + fontSize/2 + 8);
                 }
             })
             .nodePointerAreaPaint((node, color, ctx) => {
-                const size = node.val ? (node.val / 2) : 4;
+                const baseSize = Math.max(4, Math.min(20, (node.val || 5) * 0.8));
                 ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, size + 6, 0, 2 * Math.PI, false);
+                ctx.arc(node.x, node.y, baseSize + 6, 0, 2 * Math.PI, false);
                 ctx.fill();
             })
-            // Отключаем физику (узлы стоят там, где сказал UMAP)
+            // Фиксируем узлы - отключаем все силы
             .d3Force('charge', null)
             .d3Force('link', null)
             .d3Force('center', null)
-            .linkColor(() => '#333')
-            .linkWidth(1)
+            .linkColor(() => 'rgba(147, 51, 234, 0.3)')
+            .linkWidth(1.5)
             .onNodeClick(handleNodeClick);
 
         // === LOGIC ===
@@ -168,12 +703,13 @@
 
             const btn = document.getElementById('search-btn');
             const stat = document.getElementById('stats');
-            btn.innerText = "..."; btn.disabled = true;
+            btn.innerText = "Поиск...";
+            btn.disabled = true;
 
             try {
-                // 1. Запрос к бэкенду
+                // Запрос БЕЗ фильтров - получаем все данные
                 const res = await fetch('/analyze_graph', {
-                    method: 'POST', 
+                    method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ query })
                 });
@@ -184,86 +720,100 @@
                     return;
                 }
 
-                // 2. Сохраняем "Карту Мира"
+                // Сохраняем ВСЕ узлы с фиксированными координатами
                 allNodes = data.nodes.map(n => ({
                     ...n,
-                    fx: n.x, // Закрепляем намертво
-                    fy: n.y
+                    fx: n.x,  // Фиксируем X
+                    fy: n.y   // Фиксируем Y
                 }));
 
-                // 3. Сброс состояния
+                allTopics = data.topics || [];
+
+                // Сбрасываем фильтры
+                selectedClusters.clear();
+                yearMin = null;
+                yearMax = null;
+                document.getElementById('year-min').value = '';
+                document.getElementById('year-max').value = '';
+                
+                // Обновляем чекбоксы кластеров
+                buildClusterFilters(allTopics);
+
                 visibleNodeIds.clear();
                 generatedLinks = [];
                 
-                // 4. Показываем только Лидеров (Roots)
+                // Показываем только корневые узлы
                 allNodes.forEach(n => {
                     if (n.is_root) visibleNodeIds.add(n.id);
                 });
 
-                // 5. Рисуем
-                updateGraphView();
-                buildLegend(data.topics);
-                stat.innerText = `Loaded ${allNodes.length} papers. Showing roots.`;
+                // Применяем текущие фильтры (если есть)
+                applyFilters();
+                
+                buildLegend(allTopics);
+                stat.innerText = `Загружено ${allNodes.length} статей. Показано ${visibleNodeIds.size} корневых.`;
 
-                // Зум
                 setTimeout(() => Graph.zoomToFit(1000, 50), 500);
 
             } catch (e) {
                 console.error(e);
-                alert("Error: " + e.message);
+                alert("Ошибка: " + e.message);
             } finally {
-                btn.innerText = "НАЙТИ"; btn.disabled = false;
+                btn.innerText = "Найти";
+                btn.disabled = false;
             }
         }
 
         function handleNodeClick(node) {
-            // 1. Открываем инфу
             openSidebar(node);
 
-            // 2. ЛОГИКА РАДИУСА (Фонарик)
-            // Находим скрытые ноды
             const hiddenNodes = allNodes.filter(n => !visibleNodeIds.has(n.id));
-            
             if (hiddenNodes.length === 0) return;
 
-            // Считаем дистанцию от нажатой ноды до всех скрытых
-            // (У нас есть node.x и node.y, спасибо UMAP)
             hiddenNodes.forEach(n => {
                 n._tempDist = Math.hypot(n.x - node.x, n.y - node.y);
             });
 
-            // Сортируем: ближайшие первыми
             hiddenNodes.sort((a, b) => a._tempDist - b._tempDist);
-
-            // Берем ТОП-5 ближайших
             const toReveal = hiddenNodes.slice(0, 6);
 
             if (toReveal.length > 0) {
                 toReveal.forEach(neighbor => {
                     visibleNodeIds.add(neighbor.id);
-                    // Строим визуальную связь "Откуда пришел"
                     generatedLinks.push({
                         source: node.id,
                         target: neighbor.id
                     });
                 });
                 
-                // Обновляем картинку
                 updateGraphView();
-                document.getElementById('stats').innerText = `Showing ${visibleNodeIds.size} / ${allNodes.length} nodes`;
+                document.getElementById('stats').innerText = `Показано ${visibleNodeIds.size} / ${allNodes.length} статей`;
             }
         }
 
         function updateGraphView() {
-            const nodes = allNodes.filter(n => visibleNodeIds.has(n.id));
+            // Фильтруем узлы на клиенте (не делаем новый запрос)
+            const nodes = allNodes.filter(n => {
+                if (!visibleNodeIds.has(n.id)) return false;
+                
+                // Фильтр по годам
+                if (yearMin !== null && (n.year === null || n.year < yearMin)) return false;
+                if (yearMax !== null && (n.year === null || n.year > yearMax)) return false;
+                
+                // Фильтр по кластерам
+                if (selectedClusters.size > 0 && !selectedClusters.has(n.cluster_id)) return false;
+                
+                return true;
+            });
             
-            // Рисуем только наши сгенерированные связи
-            // Но фильтруем их, чтобы оба конца были видимы
             const links = generatedLinks.filter(l => 
-                visibleNodeIds.has(l.source) && visibleNodeIds.has(l.target)
+                nodes.some(n => n.id === l.source) && nodes.some(n => n.id === l.target)
             );
 
             Graph.graphData({ nodes, links });
+            
+            // Обновляем статистику
+            document.getElementById('stats').innerText = `Показано ${nodes.length} / ${allNodes.length} статей`;
         }
 
         // === UI HELPERS ===
@@ -274,25 +824,30 @@
             document.getElementById('sb-title').innerText = node.label;
             
             const absBox = document.getElementById('sb-abstract');
-            absBox.innerHTML = `<span style="color:#555">Перевод...</span><br>${node.abstract.slice(0,150)}...`;
+            absBox.innerHTML = `<span style="color: var(--text-muted);">Перевод...</span><br>${node.abstract.slice(0, 150)}...`;
             
             chatHistory = [];
             document.getElementById('chat-history').innerHTML = '';
 
             try {
                 const res = await fetch('/translate', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ text: node.abstract })
                 });
                 const data = await res.json();
                 absBox.innerText = data.translation;
-            } catch(e) { absBox.innerText = node.abstract; }
+            } catch(e) {
+                absBox.innerText = node.abstract;
+            }
         }
 
-        function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+        }
 
         function searchFromCurrent() {
-            if(!currentPaper) return;
+            if (!currentPaper) return;
             document.getElementById('search-input').value = currentPaper.label;
             closeSidebar();
             runSearch();
@@ -301,41 +856,107 @@
         async function sendChat() {
             const input = document.getElementById('chat-input');
             const val = input.value.trim();
-            if(!val) return;
+            if (!val) return;
+            
+            const provider = document.getElementById('chat-provider').value;
             
             const hDiv = document.getElementById('chat-history');
             hDiv.innerHTML += `<div class="msg user">${val}</div>`;
-            input.value = ''; hDiv.scrollTop = hDiv.scrollHeight;
+            input.value = '';
+            hDiv.scrollTop = hDiv.scrollHeight;
 
             try {
                 const res = await fetch('/chat', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ 
                         paper_text: currentPaper.full_text || currentPaper.abstract,
                         history: chatHistory,
-                        question: val 
+                        question: val,
+                        provider: provider
                     })
                 });
                 const data = await res.json();
                 hDiv.innerHTML += `<div class="msg ai">${data.answer}</div>`;
-                chatHistory.push({role:"user", content:val}, {role:"assistant", content:data.answer});
+                chatHistory.push({role: "user", content: val}, {role: "assistant", content: data.answer});
                 hDiv.scrollTop = hDiv.scrollHeight;
-            } catch(e) { hDiv.innerHTML += `<div class="msg ai">Error</div>`; }
+            } catch(e) {
+                hDiv.innerHTML += `<div class="msg ai">Ошибка при отправке сообщения</div>`;
+            }
         }
 
         function buildLegend(topics) {
             const d = document.getElementById('legend');
-            if(!topics) { d.innerHTML=''; return; }
+            if (!topics || topics.length === 0) {
+                d.innerHTML = '';
+                return;
+            }
             d.innerHTML = topics.map(t => `
-                <div class="legend-tag">
-                    <div class="legend-dot" style="background:${t.color}"></div>
-                    <span>${t.name}</span>
+                <div class="legend-tag" onclick="toggleCluster(${t.id})">
+                    <div class="legend-dot" style="background:${t.color}; color:${t.color};"></div>
+                    <span class="legend-name">${t.name}</span>
                 </div>
             `).join('');
         }
 
-        function handleKey(e) { if(e.key==='Enter') runSearch(); }
-        window.addEventListener('resize', () => { Graph.width(window.innerWidth); Graph.height(window.innerHeight); });
+        function buildClusterFilters(topics) {
+            const container = document.getElementById('cluster-filters');
+            if (!topics || topics.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Нет кластеров</div>';
+                return;
+            }
+            container.innerHTML = topics.map(t => `
+                <label class="cluster-checkbox">
+                    <input type="checkbox" value="${t.id}" onchange="updateClusterSelection(${t.id}, this.checked)" checked>
+                    <div class="cluster-dot" style="background:${t.color}; color:${t.color};"></div>
+                    <span class="cluster-name">${t.name}</span>
+                </label>
+            `).join('');
+            // По умолчанию все кластеры выбраны
+            topics.forEach(t => selectedClusters.add(t.id));
+        }
+
+        function toggleCluster(clusterId) {
+            const checkbox = document.querySelector(`#cluster-filters input[value="${clusterId}"]`);
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                updateClusterSelection(clusterId, checkbox.checked);
+            }
+        }
+
+        function updateClusterSelection(clusterId, isSelected) {
+            if (isSelected) {
+                selectedClusters.add(clusterId);
+            } else {
+                selectedClusters.delete(clusterId);
+            }
+        }
+
+        function toggleFilters() {
+            const panel = document.getElementById('filters-panel');
+            panel.classList.toggle('active');
+        }
+
+        function applyFilters() {
+            // Клиентская фильтрация - не делаем новый запрос
+            const yearMinInput = document.getElementById('year-min');
+            const yearMaxInput = document.getElementById('year-max');
+            
+            yearMin = yearMinInput.value ? parseInt(yearMinInput.value) : null;
+            yearMax = yearMaxInput.value ? parseInt(yearMaxInput.value) : null;
+
+            // Обновляем видимость узлов на основе фильтров
+            updateGraphView();
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter') runSearch();
+        }
+
+        window.addEventListener('resize', () => {
+            Graph.width(window.innerWidth);
+            Graph.height(window.innerHeight);
+        });
     </script>
 </body>
 </html>

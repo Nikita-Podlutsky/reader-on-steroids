@@ -10,8 +10,16 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 import json
 import hashlib
+import aiohttp
+from google import genai
+from google.genai import types
 
-from app.config import DEVICE, SENTENCE_MODEL_NAME, OLLAMA_MODEL, OLLAMA_MODEL_FAST, OLLAMA_MODEL_CHAT, OLLAMA_HOST, CHECKPOINT_PATH, BASE_DIR
+from app.config import (
+    DEVICE, SENTENCE_MODEL_NAME, OLLAMA_MODEL, OLLAMA_MODEL_FAST, OLLAMA_MODEL_CHAT, 
+    OLLAMA_HOST, CHECKPOINT_PATH, BASE_DIR, OPENROUTER_API_URL, OPENROUTER_MODEL, 
+    OPENROUTER_HEADERS, USE_GOOGLE_TRANSLATE, GOOGLE_AI_STUDIO_API_KEY, 
+    GOOGLE_AI_STUDIO_API_URL, GOOGLE_AI_STUDIO_MODEL
+)
 
 # Пытаемся импортировать твои файлы из корня проекта
 
@@ -186,6 +194,140 @@ class HybridEngine:
             traceback.print_exc()
             return None
 
+    async def chat_openrouter(self, msgs, model=None):
+        """Асинхронный чат через OpenRouter.ai (бесплатный анонимный API)"""
+        try:
+            model = model or OPENROUTER_MODEL
+            print(f"DEBUG: Using OpenRouter model {model} for chat")
+            
+            async with aiohttp.ClientSession() as session:
+                payload = {
+                    "model": model,
+                    "messages": msgs,
+                    "temperature": 0.7,
+                    "max_tokens": 1000
+                }
+                
+                async with session.post(
+                    OPENROUTER_API_URL,
+                    json=payload,
+                    headers=OPENROUTER_HEADERS,
+                    timeout=aiohttp.ClientTimeout(total=60)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if 'choices' in data and len(data['choices']) > 0:
+                            return data['choices'][0]['message']['content']
+                        else:
+                            print(f"Unexpected OpenRouter response: {data}")
+                            return None
+                    else:
+                        error_text = await response.text()
+                        print(f"OpenRouter error {response.status}: {error_text}")
+                        return None
+        except Exception as e:
+            print(f"OpenRouter error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def chat_google_ai_studio(self, msgs, model=None):
+        """Асинхронный чат через Google AI Studio (Gemini API) с использованием SDK"""
+        try:
+            if not GOOGLE_AI_STUDIO_API_KEY:
+                print("ERROR: GOOGLE_AI_STUDIO_API_KEY not set in environment")
+                return None
+            
+            model = model or GOOGLE_AI_STUDIO_MODEL
+            print(f"DEBUG: Using Google AI Studio model {model} for chat")
+            
+            # Инициализация клиента
+            client = genai.Client(api_key=GOOGLE_AI_STUDIO_API_KEY)
+
+            # Преобразуем сообщения в формат, ожидаемый SDK
+            formatted_contents = []
+            for msg in msgs:
+                print(f"DEBUG: Google AI Studio message: {msg}")
+                role = "user" if msg["role"] == "user" else "model"
+                formatted_contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part(text=msg["content"])]
+                    )
+                )
+
+            # Конфигурация генерации
+            config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=1000
+            )
+
+            # Асинхронный вызов через свойство .aio
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=formatted_contents,
+                config=config
+            )
+
+            # Возвращаем текст
+            return response.text
+
+        except Exception as e:
+            print(f"Google AI Studio error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def translate_google(self, text):
+        """Перевод через Google Translate API (бесплатный)"""
+        try:
+            # Используем бесплатный API Google Translate через googletrans
+            try:
+                from googletrans import Translator
+                import inspect  # Добавляем для проверки типа функции
+                
+                translator = Translator()
+                
+                # Проверяем, является ли метод асинхронным (googletrans==4.0.0rc1+)
+                if inspect.iscoroutinefunction(translator.translate):
+                    result = await translator.translate(text, dest='ru')
+                else:
+                    # Для старых синхронных версий (googletrans==3.0.0)
+                    result = await asyncio.to_thread(translator.translate, text, dest='ru')
+                
+                return result.text
+                
+            except ImportError:
+                # Если googletrans не установлен, используем альтернативный метод
+                # Используем бесплатный веб-API Google Translate
+                import urllib.parse
+                import urllib.request
+                
+                url = "https://translate.googleapis.com/translate_a/single"
+                params = {
+                    'client': 'gtx',
+                    'sl': 'en',
+                    'tl': 'ru',
+                    'dt': 't',
+                    'q': text[:5000]  # Ограничение длины
+                }
+                
+                query_string = urllib.parse.urlencode(params)
+                full_url = f"{url}?{query_string}"
+                
+                def _translate():
+                    with urllib.request.urlopen(full_url, timeout=10) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                        if data and len(data) > 0 and len(data[0]) > 0:
+                            return ''.join([item[0] for item in data[0] if item[0]])
+                        return text
+                
+                return await asyncio.to_thread(_translate)
+        except Exception as e:
+            print(f"Google Translate error: {e}")
+            # Fallback - возвращаем оригинал
+            return text
+
     async def chat_ollama_stream(self, msgs, model=None):
         """Асинхронный генератор для streaming чата с Ollama"""
         import queue
@@ -255,40 +397,48 @@ class HybridEngine:
                 print(f"Stream yield error: {e}")
                 break
 
-    async def translate_fast(self, text):
-        """Быстрый перевод с кэшированием"""
+    async def translate_fast(self, text, provider="google"):
+        """Быстрый перевод с кэшированием и выбором провайдера"""
         # Проверяем кэш
         text_hash = self._get_text_hash(text)
         if text_hash in self.translation_cache:
             return self.translation_cache[text_hash]
         
         try:
-            # Русский промпт для лучшей работы с phi3:mini
-            prompt = f"""Переведи следующий текст на русский язык. Сохрани технические термины и формулы без изменений. Верни только перевод без пояснений.
+            translation = None
+            
+            # Выбираем провайдера
+            if provider == "google" or (provider is None and USE_GOOGLE_TRANSLATE):
+                # Используем Google Translate
+                translation = await self.translate_google(text)
+            else:
+                # Используем Ollama (старый метод)
+                prompt = f"""Переведи следующий текст на русский язык. Сохрани технические термины и формулы без изменений. Верни только перевод без пояснений.
 
 Текст:
 {text[:1500]}"""
-            msgs = [{"role": "user", "content": prompt}]
-            result = await asyncio.to_thread(self.chat_ollama_sync, msgs, OLLAMA_MODEL_FAST)
-            if result:
-                # Очистка markdown
-                cleaned = result.strip()
-                if cleaned.startswith("```"):
-                    lines = cleaned.split('\n')
-                    if len(lines) > 2 and lines[-1] == "```":
-                        cleaned = '\n'.join(lines[1:-1])
-                translation = cleaned.strip()
-                
-                # Убираем возможные префиксы типа "Перевод:" или "Translation:"
-                for prefix in ["Перевод:", "Translation:", "Переведенный текст:", "Translated text:"]:
-                    if translation.startswith(prefix):
-                        translation = translation[len(prefix):].strip()
-                
+                msgs = [{"role": "user", "content": prompt}]
+                result = await asyncio.to_thread(self.chat_ollama_sync, msgs, OLLAMA_MODEL_FAST)
+                if result:
+                    # Очистка markdown
+                    cleaned = result.strip()
+                    if cleaned.startswith("```"):
+                        lines = cleaned.split('\n')
+                        if len(lines) > 2 and lines[-1] == "```":
+                            cleaned = '\n'.join(lines[1:-1])
+                    translation = cleaned.strip()
+                    
+                    # Убираем возможные префиксы
+                    for prefix in ["Перевод:", "Translation:", "Переведенный текст:", "Translated text:"]:
+                        if translation.startswith(prefix):
+                            translation = translation[len(prefix):].strip()
+            
+            if translation:
                 # Сохраняем в кэш
                 self.translation_cache[text_hash] = translation
                 self._save_translation_cache()
-                
                 return translation
+            
             return text  # Fallback - возвращаем оригинал
         except Exception as e:
             print(f"Translation error: {e}")

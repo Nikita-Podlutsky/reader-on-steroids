@@ -23,24 +23,49 @@ def init_globals(eng, loader):
 @router.post("/analyze_graph", response_model=GraphResponse)
 async def analyze_graph(req: SearchRequest):
     query = req.query.strip()
-    if query in search_cache:
-        return search_cache[query]
+    cache_key = f"{query}_{req.year_min}_{req.year_max}_{req.cluster_ids}"
     
-    if not arxiv_loader or not engine:
-        raise HTTPException(status_code=503, detail="Service not initialized")
+    if cache_key in search_cache:
+        result = search_cache[cache_key]
+    else:
+        if not arxiv_loader or not engine:
+            raise HTTPException(status_code=503, detail="Service not initialized")
 
-    # 1. Качаем статьи
-    papers = await asyncio.to_thread(arxiv_loader.search_and_load, query, max_results=ARXIV_MAX_RESULTS)
+        # 1. Качаем статьи
+        papers = await asyncio.to_thread(arxiv_loader.search_and_load, query, max_results=ARXIV_MAX_RESULTS)
+        
+        # 2. Запускаем пайплайн (Embed -> Scorer -> UMAP -> JSON)
+        result = await process_graph_analysis(engine, query, papers)
+        
+        search_cache[cache_key] = result
     
-    # 2. Запускаем пайплайн (Embed -> Scorer -> UMAP -> JSON)
-    result = await process_graph_analysis(engine, query, papers)
+    # 3. Применяем фильтры
+    filtered_nodes = result["nodes"]
     
-    search_cache[query] = result
+    # Фильтр по годам
+    if req.year_min is not None or req.year_max is not None:
+        filtered_nodes = [
+            n for n in filtered_nodes
+            if n.get("year") is not None
+            and (req.year_min is None or n["year"] >= req.year_min)
+            and (req.year_max is None or n["year"] <= req.year_max)
+        ]
+    
+    # Фильтр по кластерам
+    if req.cluster_ids is not None and len(req.cluster_ids) > 0:
+        filtered_nodes = [
+            n for n in filtered_nodes
+            if n.get("cluster_id") in req.cluster_ids
+        ]
+    
+    # Обновляем результат с отфильтрованными узлами
+    result["nodes"] = filtered_nodes
+    
     return result
 
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest):
-    """Chat endpoint with streaming support and fallback"""
+    """Chat endpoint with support for Ollama and OpenRouter.ai"""
     if not engine:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -50,52 +75,45 @@ async def chat_endpoint(req: ChatRequest):
         {"role": "user", "content": req.question}
     ]
     
-    # Проверяем, запрашивает ли клиент streaming (через заголовок или параметр)
-    # Для обратной совместимости используем обычный режим по умолчанию
-    use_streaming = False  # Можно добавить проверку заголовка
+    # Выбираем провайдера (по умолчанию ollama)
+    provider = req.provider or "ollama"
     
-    if use_streaming:
-        # Streaming режим
-        async def generate():
-            """Async generator for streaming responses"""
-            try:
-                async for chunk in engine.chat_ollama_stream(messages):
-                    if chunk is None:
-                        break
-                    yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
-                yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
-            except Exception as e:
-                error_msg = json.dumps({'error': str(e), 'done': True})
-                yield f"data: {error_msg}\n\n"
-        
-        return StreamingResponse(
-            generate(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-    else:
-        # Обычный режим (для обратной совместимости)
-        try:
+    try:
+        if provider == "openrouter":
+            # Используем OpenRouter.ai
+            ans = await engine.chat_openrouter(messages)
+            if ans is None:
+                raise HTTPException(status_code=500, detail="OpenRouter failed - no response")
+            return {"answer": ans}
+        elif provider == "google":
+            # Используем Google AI Studio (Gemini)
+            ans = await engine.chat_google_ai_studio(messages)
+            if ans is None:
+                raise HTTPException(status_code=500, detail="Google AI Studio failed - no response")
+            return {"answer": ans}
+        else:
+            # Используем Ollama (по умолчанию)
             ans = await asyncio.to_thread(engine.chat_ollama_sync, messages)
             if ans is None:
                 raise HTTPException(status_code=500, detail="Ollama failed - no response")
             return {"answer": ans}
-        except Exception as e:
-            print(f"Chat error details: {e}")  # Логируем для отладки
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Chat error details: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 @router.post("/translate")
 async def translate_endpoint(req: TranslateRequest):
-    """Optimized translation endpoint using fast model"""
+    """Translation endpoint with support for Google Translate and Ollama"""
     if not engine:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
-    # Используем оптимизированный метод перевода
-    translation = await engine.translate_fast(req.text)
+    # Выбираем провайдера (по умолчанию google)
+    provider = req.provider or "google"
+    
+    # Используем выбранный метод перевода
+    translation = await engine.translate_fast(req.text, provider=provider)
     return {"translation": translation}
