@@ -15,9 +15,13 @@ load_dotenv()
 
 
 debug = os.getenv('DEBUG', 'False')
-hf_key = os.environ['HF_KEY']
+hf_key = os.getenv('HF_KEY')  # Опциональный токен
 
-huggingface_hub.login(token=hf_key)
+# Логин в HuggingFace только если токен задан
+if hf_key:
+    huggingface_hub.login(token=hf_key)
+else:
+    print("WARNING: HF_KEY not set. Some models may require authentication.")
 
 class _Config:
     def __init__(self):

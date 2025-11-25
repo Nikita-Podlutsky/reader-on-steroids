@@ -54,7 +54,12 @@ async def read_root():
     
     return FileResponse(str(index_file))
 
-# 2. Монтируем статику, чтобы работали скрипты, если они будут в файлах
+# 2. Монтируем assets для JS/CSS файлов
+assets_path = STATIC_PATH / "assets"
+if assets_path.exists():
+    app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+
+# 3. Монтируем остальную статику (если есть другие файлы)
 if STATIC_PATH.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_PATH)), name="static")
 

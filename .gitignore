@@ -4,3 +4,6 @@ checkpoints
 .vscode
 .env
 arxiv_pdfs/*
+/frontend/node_modules/*
+/frontend/dist/*
+/AI/reader-on-steroids/app/__pycache__/

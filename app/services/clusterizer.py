@@ -8,25 +8,27 @@ from hdbscan import HDBSCAN
 from app.config import MAX_TOPICS
 
 def generate_neon_colors(n):
-    """Генерирует пастельные цвета в стиле Anthropic"""
+    """Генерирует контрастные цвета для темного фона"""
     colors = []
-    # Пастельная палитра: мягкие оттенки
-    pastel_palette = [
-        '#fce7f3',  # мягкий розовый
-        '#dbeafe',  # мягкий голубой
-        '#ede9fe',  # мягкий фиолетовый
-        '#f0fdf4',  # мягкий зеленый
-        '#fffbeb',  # мягкий желтый
-        '#fef2f2',  # мягкий красный
-        '#f0f9ff',  # небесно-голубой
-        '#faf5ff',  # лавандовый
-        '#ecfdf5',  # мятный
-        '#fff7ed',  # персиковый
+    # Контрастная палитра для темного фона: яркие насыщенные оттенки
+    contrast_palette = [
+        '#3498db',  # синий
+        '#e74c3c',  # красный
+        '#2ecc71',  # зеленый
+        '#f39c12',  # оранжевый
+        '#9b59b6',  # фиолетовый
+        '#1abc9c',  # бирюзовый
+        '#e67e22',  # темно-оранжевый
+        '#34495e',  # серо-синий
+        '#16a085',  # темно-бирюзовый
+        '#c0392b',  # темно-красный
+        '#27ae60',  # темно-зеленый
+        '#8e44ad',  # темно-фиолетовый
     ]
     
     for i in range(n):
         # Используем палитру с циклическим повторением
-        color = pastel_palette[i % len(pastel_palette)]
+        color = contrast_palette[i % len(contrast_palette)]
         colors.append(color)
     
     return colors
