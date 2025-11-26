@@ -87,17 +87,17 @@ echo.
 echo ===================================================
 echo        ЗАПУСК СЕРВЕРА
 echo ===================================================
-echo
+echo.
 echo 🚀 Запуск uvicorn...
+echo    Сервер будет доступен по адресу: http://localhost:8000
 echo.
 
+REM Запускаем браузер ДО старта сервера (с задержкой)
+start /B cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8000"
+
+REM Запускаем сервер
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
-echo      Не закрывайте это черное окно, пока работаете с картой!
-echo      Если браузер не открылся, перейдите по ссылке:
-echo      http://localhost:8000
+
 echo.
-
-timeout /t 2 /nobreak >nul
-start "" "http://localhost:8000"
-
+echo ⚠️  Сервер остановлен
 pause
