@@ -47,4 +47,4 @@ CHECKPOINT_PATH = BASE_DIR / "checkpoints" / "best_model.pt"
 # 4. Путь к статике (app/static) - теперь он строится от APP_DIR
 STATIC_PATH = APP_DIR / "static"
 
-ARXIV_MAX_RESULTS = 10
+ARXIV_MAX_RESULTS = 50
