@@ -92,7 +92,7 @@ function App() {
               <div className="text-center mb-8">
                 <div className="text-6xl mb-4">📚</div>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent mb-2">
-                  ScholarMap
+                  Kotodex
                 </h1>
                 <p className="text-gray-400 text-lg">Карта научных идей</p>
               </div>

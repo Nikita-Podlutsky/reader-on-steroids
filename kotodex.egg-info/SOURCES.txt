@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+app/arxiv_loader.py
+app/checkpoint_utils.py
+app/config.py
+app/config4model.py
+app/main.py
+app/models.py
+app/schemas.py
+app/routers/endpoints.py
+app/services/clusterizer.py
+app/services/engine.py
+kotodex.egg-info/PKG-INFO
+kotodex.egg-info/SOURCES.txt
+kotodex.egg-info/dependency_links.txt
+kotodex.egg-info/requires.txt
+kotodex.egg-info/top_level.txt

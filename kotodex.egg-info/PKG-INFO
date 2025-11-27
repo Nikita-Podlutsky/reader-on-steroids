@@ -1,0 +1,226 @@
+Metadata-Version: 2.4
+Name: kotodex
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: <3.13,>=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: accelerate>=1.11.0
+Requires-Dist: bertopic>=0.17.3
+Requires-Dist: fastapi>=0.121.0
+Requires-Dist: flagembedding>=1.3.5
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: huggingface-hub[hf-xet]>=0.36.0
+Requires-Dist: json-lines>=0.5.0
+Requires-Dist: nltk>=3.9.2
+Requires-Dist: numpy>=2.3.4
+Requires-Dist: orjson>=3.11.4
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: peft>=0.17.1
+Requires-Dist: pymupdf>=1.26.5
+Requires-Dist: python-dotenv>=1.2.1
+Requires-Dist: requests>=2.32.5
+Requires-Dist: scipy>=1.11.0
+Requires-Dist: sentence-transformers>=5.1.2
+Requires-Dist: tokenizers>=0.22.1
+Requires-Dist: torch==2.8.0
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: transformers[torch]>=4.35.0
+Requires-Dist: uvicorn>=0.38.0
+Requires-Dist: arxiv>=2.3.1
+Requires-Dist: ollama>=0.6.1
+Requires-Dist: googletrans>=4.0.2
+Requires-Dist: google-genai>=1.52.0
+Requires-Dist: pypdf>=6.3.0
+
+# Kotodex - Интерактивная карта научных публикаций
+
+## 📋 Системные требования
+
+### Обязательные компоненты:
+
+1. **Python 3.12**
+   - Скачать: https://www.python.org/downloads/
+   - ⚠️ При установке обязательно отметить **"Add Python to PATH"**
+   - Проверить: `python --version`
+
+2. **Ollama** (для AI чата с документами)
+   - Скачать: https://ollama.com/download
+   - После установки выполнить в терминале:
+     ```bash
+     ollama pull gemma2:2b
+     ```
+   - Проверить: `ollama --version`
+
+### Опциональные компоненты:
+
+3. **Node.js 20.x (LTS) и npm** _(нужен только для разработки)_
+   - 📦 **Если в архиве есть папка `app/static`** - Node.js не нужен!
+   - Скачать: https://nodejs.org/ (если хотите пересобирать фронтенд)
+   - npm устанавливается автоматически вместе с Node.js
+   - Проверить: `node --version` и `npm --version`
+
+4. **CUDA 12.6+** (только для ускорения на GPU NVIDIA)
+   - Скачать: https://developer.nvidia.com/cuda-downloads
+
+## 🚀 Быстрый старт
+
+### Запуск из готового архива (рекомендуется):
+
+1. Убедитесь, что установлены **Python 3.12** и **Ollama**
+2. Дважды кликните на `run.bat`
+3. Скрипт автоматически:
+   - ✅ Проверит наличие собранного фронтенда в `app/static`
+   - ✅ Если фронтенд есть - сразу запустит сервер ⚡ (2 секунды)
+   - ✅ Если фронтенда нет - соберет его (требуется Node.js, займет 5-10 минут)
+   - 🌐 Автоматически откроет браузер на http://localhost:8000
+
+**Повторные запуски мгновенные!** Сборка выполняется только один раз.
+
+### Пересборка фронтенда (при изменении кода):
+
+Если вы разработчик и меняете код фронтенда:
+```powershell
+# Удалить старую сборку
+rmdir /S /Q app\static
+
+# Запустить run.bat - он пересоберет автоматически
+run.bat
+```
+
+### Ручной запуск (если run.bat не работает):
+
+```powershell
+# 1. Активировать виртуальное окружение
+.\.venv\Scripts\activate
+
+# 2. Запустить сервер
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Откройте браузер: **http://localhost:8000**
+
+### Ручная сборка фронтенда (только для разработчиков):
+
+⚠️ **Нужна только если папки `app/static` нет или вы меняете код фронтенда**
+
+```powershell
+# 1. Установить Node.js (если еще не установлен)
+# Скачать с https://nodejs.org/
+
+# 2. Перейти в папку фронтенда
+cd frontend
+
+# 3. Установить зависимости
+npm install
+
+# 4. Собрать production версию
+npm run build
+
+# 5. Скопировать в папку static
+xcopy /E /I /Y dist ..\app\static
+
+# 6. Вернуться назад
+cd ..
+```
+
+## 🌐 Использование
+
+1. **Запуск**: Дважды кликните `run.bat`
+2. **Интерфейс**: Автоматически откроется **http://localhost:8000**
+3. **Поиск**: Введите тему исследования (например, "machine learning")
+4. **Граф**: Исследуйте граф связанных публикаций
+5. **AI Чат**: Кликните на статью и задайте вопросы об её содержании
+
+## 🔧 Конфигурация AI провайдеров
+
+### Ollama (рекомендуется, локально):
+✅ Уже настроен по умолчанию  
+✅ Работает без интернета  
+✅ Бесплатно  
+
+**Требования:**
+- Установить Ollama: https://ollama.com/download
+- Скачать модель: `ollama pull gemma2:2b`
+
+### OpenRouter.ai (облачно, бесплатные модели):
+1. Получить API ключ: https://openrouter.ai/
+2. Создать файл `.env` в корне проекта:
+   ```
+   OPENROUTER_API_KEY=your_key_here
+   ```
+
+### Google AI Studio (облачно):
+1. Получить API ключ: https://aistudio.google.com/
+2. Добавить в `.env`:
+   ```
+   GOOGLE_API_KEY=your_key_here
+   ```
+
+⚠️ **Важно**: Выбор провайдера доступен в интерфейсе чата (выпадающий список)
+
+## 📁 Структура проекта
+
+```
+reader-on-steroids/
+├── app/                    # Backend (FastAPI)
+│   ├── main.py            # Главный файл приложения
+│   ├── routers/           # API эндпоинты
+│   ├── services/          # Бизнес-логика
+│   └── static/            # Собранный фронтенд
+├── frontend/              # Frontend (React + TypeScript)
+│   ├── src/               # Исходники
+│   └── dist/              # Сборка (создается автоматически)
+├── .venv/                 # Виртуальное окружение Python
+├── run.bat               # Скрипт запуска (Windows)
+└── pyproject.toml        # Зависимости Python
+```
+
+## ❓ Решение проблем
+
+### ❌ "Папка .venv не найдена"
+Скрипт ожидает, что виртуальное окружение уже создано.  
+**Решение:**
+```powershell
+python -m venv .venv
+```
+
+### ❌ "npm не найден"
+Node.js не установлен или не добавлен в PATH.  
+**Решение:**  
+Установите Node.js LTS с https://nodejs.org/
+
+### ❌ "ModuleNotFoundError: pydantic_core"
+Несовместимая версия Python (требуется 3.12).  
+**Решение:**
+```powershell
+python --version  # Проверить версию
+rmdir /S /Q .venv  # Удалить старое окружение
+python -m venv .venv  # Создать новое
+.\.venv\Scripts\activate
+pip install -e .
+```
+
+### ❌ "Порт 8000 занят"
+Другое приложение использует порт 8000.  
+**Решение:**
+```powershell
+netstat -ano | findstr :8000  # Найти PID процесса
+taskkill /PID <номер> /F  # Завершить процесс
+```
+
+### ❌ "404 Not Found для /assets/..."
+Фронтенд не собран или не скопирован.  
+**Решение:**
+```powershell
+cd frontend
+npm run build
+xcopy /E /I /Y dist ..\app\static
+```
+
+### 💬 AI чат не отвечает
+Ollama не запущен или модель не установлена.  
+**Решение:**
+```bash
+ollama list  # Проверить установленные модели
+ollama pull gemma2:2b  # Установить модель
+```
