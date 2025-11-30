@@ -31,6 +31,7 @@ Requires-Dist: ollama>=0.6.1
 Requires-Dist: googletrans>=4.0.2
 Requires-Dist: google-genai>=1.52.0
 Requires-Dist: pypdf>=6.3.0
+Requires-Dist: bitsandbytes
 
 # Kotodex - Интерактивная карта научных публикаций
 

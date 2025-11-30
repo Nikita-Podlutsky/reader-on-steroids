@@ -25,3 +25,4 @@ ollama>=0.6.1
 googletrans>=4.0.2
 google-genai>=1.52.0
 pypdf>=6.3.0
+bitsandbytes
