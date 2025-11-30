@@ -13,6 +13,7 @@ import hashlib
 import aiohttp
 from google import genai
 from google.genai import types
+from ollama import Client
 
 from app.config import (
     DEVICE, SENTENCE_MODEL_NAME, OLLAMA_MODEL, OLLAMA_MODEL_FAST, OLLAMA_MODEL_CHAT, 
@@ -31,6 +32,36 @@ except ImportError:
     print("WARNING: 'models.py' or 'checkpoint_utils.py' not found. Using fallback mode.")
     HAS_CUSTOM_MODEL = False
 
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+def ensure_ollama_model():
+    print(f"🤖 Checking Ollama connection at {OLLAMA_HOST}...")
+    client = Client(host=OLLAMA_HOST)
+    
+    try:
+        # 1. Проверяем, есть ли модель
+        models_list = client.list()
+        # ollama library возвращает объекты, нужно правильно проверить
+        models = [m['name'] for m in models_list.get('models', [])]
+        
+        # У Ollama имена могут быть с тегом 'latest', проверяем гибко
+        found = any(OLLAMA_MODEL in m for m in models)
+        
+        if not found:
+            print(f"📥 Model {OLLAMA_MODEL} not found inside Docker. Pulling now... (This may take time)")
+            # Это синхронный вызов, он заблокирует старт, пока не скачает
+            # Для первого запуска это нормально
+            client.pull(OLLAMA_MODEL)
+            print(f"✅ Model {OLLAMA_MODEL} downloaded successfully!")
+        else:
+            print(f"✅ Model {OLLAMA_MODEL} is ready.")
+            
+    except Exception as e:
+        print(f"⚠️ Warning: Could not connect to Ollama inside Docker: {e}")
+
+
+ensure_ollama_model()
 class HybridEngine:
     def __init__(self):
         self.device = torch.device(DEVICE)

@@ -1,0 +1,45 @@
+services:
+
+  kotodex:
+    build: .
+    container_name: kotodex_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./arxiv_pdfs:/app/arxiv_pdfs
+      - ./checkpoints:/app/checkpoints
+      - ./triplets_data:/app/triplets_data
+      - hf_cache:/root/.cache/huggingface
+    environment:
+      # ТЕПЕРЬ ОЛЛАМА ВНУТРИ СЕТИ ДОКЕРА
+      # Обращаемся к ней по имени сервиса: "ollama"
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 2. Сервис Ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: kotodex_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  hf_cache:
+  ollama_models:

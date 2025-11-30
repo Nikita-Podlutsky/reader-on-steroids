@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+frontend/node_modules
+frontend/dist
+app/static
+arxiv_pdfs
+checkpoints
+triplets_data
