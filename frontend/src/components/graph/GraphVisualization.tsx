@@ -169,7 +169,7 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
 
       // Круги (радиус 8px = диаметр 16px, компенсируется zoom)
       nodeEnter.append('circle')
-        .attr('r', 8 / currentZoomScaleRef.current)
+        .attr('r', 12 / currentZoomScaleRef.current)
         .attr('fill', (d) => d.color)
         .attr('stroke', (d) => d.id === selectedNodeId ? 'white' : d.color)
         .attr('stroke-width', (d) => (d.id === selectedNodeId ? 3 : 1.5) / currentZoomScaleRef.current)
@@ -328,7 +328,7 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
         currentZoomScaleRef.current = currentScale;
         
         // Компенсируем zoom для размера узлов и обводки - они остаются фиксированного размера
-        const fixedRadius = 8; // Фиксированный радиус в пикселях (диаметр 16px)
+        const fixedRadius = 12; // Фиксированный радиус в пикселях (диаметр 16px)
         const fixedStrokeWidth = 1.5;
         const fixedStrokeWidthHover = 3;
         
