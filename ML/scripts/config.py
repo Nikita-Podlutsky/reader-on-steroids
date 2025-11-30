@@ -1,6 +1,20 @@
 # ==============================================================================
 #
-#                    Единый Файл Конфигурации Проекта
+#                   Единый Файл Конфигурации Проекта
+#
+# ==============================================================================
+#
+#   Что делает:
+#   1. Централизованно хранит ВСЕ параметры проекта: пути, модели, гиперпараметры.
+#   2. Задает конфигурации QLoRA для QueryEncoder и LoRA для DocumentEncoder.
+#   3. Динамически загружает конфиги моделей с Hugging Face для автоопределения размерностей.
+#   4. Настраивает параметры обучения, API, предобработки данных.
+#   5. Поддерживает переключение между режимами (обучение/инференс, CPU/GPU).
+#
+#   Запуск:
+#   Импортируется как модуль: from config import CONFIG
+#
+#   Изменяйте параметры здесь, а не в коде других файлов
 #
 # ==============================================================================
 
@@ -38,7 +52,7 @@ class _Config:
         self.BASE_DATA_DIR = Path('triplets_data')
         self.PDF_DIR = Path('arxiv_pdfs')
         self.CHECKPOINT_DIR = Path('checkpoints')
-        self.METADATA_FILE = 'arxiv-metadata-oai-snapshot.json'
+        self.METADATA_FILE = self.BASE_DATA_DIR / 'arxiv-metadata-oai-snapshot.json'
         self.ENRICHED_PAPERS_CACHE_FILE = self.BASE_DATA_DIR / 'enriched_papers_cache.json'
         self.OUTPUT_TRIPLETS_FILE = self.BASE_DATA_DIR / 'conditional_triplets.json'
         self.EMBEDDINGS_PT_DIR = self.BASE_DATA_DIR / 'sentence_embeddings_pt'
@@ -105,6 +119,8 @@ class _Config:
         self.API_PORT = 8000
         self.API_HOST = "127.0.0.1"
         self.API_ALLOWED_DOCS_DIR = Path(".").resolve()
+        self.API_ALLOWED_DOCS_DIR = Path("./arxiv_pdfs").resolve()
+        
         self.API_SENTENCE_ENCODING_BATCH = 64
 
 

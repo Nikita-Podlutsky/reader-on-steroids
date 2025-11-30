@@ -1,4 +1,26 @@
 # ==============================================================================
+#
+#                   Архитектура Нейронной Сети для Ранжирования
+#
+# ==============================================================================
+#
+#   Что делает:
+#   1. QueryEncoderBGE: кодировщик запросов на базе BGE-small с QLoRA (4-bit).
+#   2. DocumentEncoder: кодировщик документов на базе Longformer с LoRA.
+#   3. DocumentEncoder применяет внимание к запросу для взвешивания предложений.
+#   4. UniversalScorer: объединяет оба энкодера и вычисляет triplet margin loss.
+#   5. Поддерживает градиентный чекпоинтинг для экономии памяти.
+#   6. Все проекции приводятся к единой размерности для сопоставления.
+#
+#   Запуск:
+#   Импортируется как модуль: from models import UniversalScorer
+#
+#   Используется train.py, api.py и benchmark.py
+#
+# ==============================================================================
+
+
+# ==============================================================================
 # 0. ИМПОРТЫ
 # ==============================================================================
 import torch
@@ -144,9 +166,6 @@ class DocumentEncoder(nn.Module):
             self.longformer.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
             )
-
-        # Остальная часть __init__ остается почти без изменений
-        # Но теперь мы должны использовать model_dtype для всех слоев
         
         self.sentence_projection = nn.Linear(
             CONFIG.SENTENCE_EMBEDDING_DIM, 
@@ -197,7 +216,7 @@ class DocumentEncoder(nn.Module):
             output_attentions=False
         ).last_hidden_state
         
-        # ... (остальная часть forward pass без изменений) ...
+        
         query_projected = self.query_projection(query_vec)
         query_expanded = query_projected.unsqueeze(1).expand(-1, embeddings.shape[1], -1)
         combined = torch.cat([transformer_output, query_expanded], dim=-1)

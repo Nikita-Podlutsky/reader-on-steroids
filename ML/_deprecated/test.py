@@ -22,21 +22,12 @@ from umap import UMAP
 from hdbscan import HDBSCAN
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
+from config import CONFIG
 # ==============================================================================
 # КОНФИГУРАЦИЯ
 # ==============================================================================
 
-class Config:
-    """Настройки приложения"""
-    API_HOST = "0.0.0.0"
-    API_PORT = 8001
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-    MIN_DOCUMENTS = 5
-    MAX_DOCUMENTS = 500
-    
-CONFIG = Config()
+
 
 # ==============================================================================
 # PYDANTIC СХЕМЫ
