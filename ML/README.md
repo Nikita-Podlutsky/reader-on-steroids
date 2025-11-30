@@ -163,46 +163,39 @@ checkpoints/best_model.pt/
 ### Step 0: Environment Setup
 ```bash
 # Install dependencies
-pip install torch transformers peft bitsandbytes sentence-transformers fastapi uvicorn fitz nltk
-
-# Set Hugging Face token (for gated models)
-export HF_KEY="your_token_here"
-
-# Start Ollama for synthetic query generation
+uv sync
 ollama serve
 ollama pull gemma3:latest
-```
-
-### Step 1: Data Preparation (One-time, ~6-8 hours)
+### Step 1: Data Preparation (One-time, ~1-2 hours)
 ```bash
-python data_prepair.py
+uv run data_prepair.py
 
 # Optional: Validate generated data
-python validate_metadata.py
+uv run validate_metadata.py
 ```
 
 **Output**: 
 - `triplets_data/sentence_embeddings_pt/` (hashed .pt files)
 - `triplets_data/metadata_for_hierarchical.json`
-- `triplets_data/doc_pool.pt` (run `python precompute_docs.py` after Step 1)
+- `triplets_data/doc_pool.pt` (run `uv run precompute_docs.py` after Step 1)
 
 ### Step 2: Model Training
 ```bash
 # Resume from latest checkpoint if exists
-python train.py
+uv run train.py
 
 # Monitor checkpoints in `checkpoints/`
 ```
 
 **Training Specs**:
-- **Hardware**: RTX 4090 (24GB) or A100 (40GB)
+- **Hardware**: RTX 3060 (12GB) or A100 (40GB)
 - **Time**: ~10 hours for 10 epochs on 20K triplets
-- **Memory**: ~18GB VRAM (thanks to LoRA/QLoRA)
+- **Memory**: <10GB VRAM (thanks to LoRA/QLoRA)
 - **Batch Size**: Effective 8 (4 × 2 accumulation steps)
 
 ### Step 3: Benchmarking
 ```bash
-python benchmark.py
+uv run benchmark.py
 
 # Results saved to:
 # benchmark_results/results_YYYYMMDD_HHMMSS.json
@@ -210,7 +203,7 @@ python benchmark.py
 
 ### Step 4: Deploy API
 ```bash
-python api.py
+uv run api.py
 
 # API Documentation: http://127.0.0.1:8000
 ```
