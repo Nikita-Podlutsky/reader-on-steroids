@@ -7,3 +7,5 @@ arxiv_pdfs/*
 /frontend/node_modules/*
 /frontend/dist/*
 /AI/reader-on-steroids/app/__pycache__/
+checkpoints/
+*.pt
