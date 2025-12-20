@@ -21,7 +21,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "google/gemma-2-2b-it:free"  # Бесплатная модель
 OPENROUTER_HEADERS = {
     "Content-Type": "application/json",
-    "HTTP-Referer": "http://localhost:8000",  # Для анонимного доступа
+    "HTTP-Referer": "",  # Для анонимного доступа
     "X-Title": "Kotodex Research Explorer"
 }
 

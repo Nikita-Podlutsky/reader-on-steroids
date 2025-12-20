@@ -89,11 +89,11 @@ echo        ЗАПУСК СЕРВЕРА
 echo ===================================================
 echo.
 echo 🚀 Запуск uvicorn...
-echo    Сервер будет доступен по адресу: http://localhost:8000
+echo    Сервер будет доступен по адресу: 
 echo.
 
 REM Запускаем браузер ДО старта сервера (с задержкой)
-start /B cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8000"
+start /B cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8000/"
 
 REM Запускаем сервер
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info

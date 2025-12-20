@@ -8,7 +8,7 @@ interface SidebarRightProps {
   onFindSimilar?: (title: string) => void;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const SidebarRight: React.FC<SidebarRightProps> = ({ selectedArticle, onFindSimilar }) => {
   const [translatedAbstract, setTranslatedAbstract] = useState<string>('');
