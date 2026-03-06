@@ -1,16 +1,16 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.schemas import SearchRequest, ChatRequest, TranslateRequest, GraphResponse
-from app.services.engine import HybridEngine
-from app.services.clusterizer import process_graph_analysis
-from app.arxiv_loader import ArxivLoader
-from app.config import ARXIV_MAX_RESULTS
+from schemas import SearchRequest, ChatRequest, TranslateRequest, GraphResponse
+from services.engine import HybridEngine
+from services.clusterizer import process_graph_analysis
+from arxiv_loader import ArxivLoader
+from config import ARXIV_MAX_RESULTS
 import asyncio
 import json
 
 router = APIRouter()
 
-# Глобальные объекты (инициализируются в main.py, здесь просто ссылки)
+
 engine: HybridEngine = None
 arxiv_loader: ArxivLoader = None
 search_cache = {}
@@ -31,18 +31,18 @@ async def analyze_graph(req: SearchRequest):
         if not arxiv_loader or not engine:
             raise HTTPException(status_code=503, detail="Service not initialized")
 
-        # 1. Качаем статьи
+        
         papers = await asyncio.to_thread(arxiv_loader.search_and_load, query, max_results=ARXIV_MAX_RESULTS)
         
-        # 2. Запускаем пайплайн (Embed -> Scorer -> UMAP -> JSON)
+        
         result = await process_graph_analysis(engine, query, papers)
         
         search_cache[cache_key] = result
     
-    # 3. Применяем фильтры
+    
     filtered_nodes = result["nodes"]
     
-    # Фильтр по годам
+    
     if req.year_min is not None or req.year_max is not None:
         filtered_nodes = [
             n for n in filtered_nodes
@@ -51,14 +51,14 @@ async def analyze_graph(req: SearchRequest):
             and (req.year_max is None or n["year"] <= req.year_max)
         ]
     
-    # Фильтр по кластерам
+    
     if req.cluster_ids is not None and len(req.cluster_ids) > 0:
         filtered_nodes = [
             n for n in filtered_nodes
             if n.get("cluster_id") in req.cluster_ids
         ]
     
-    # Обновляем результат с отфильтрованными узлами
+    
     result["nodes"] = filtered_nodes
     
     return result
@@ -75,24 +75,24 @@ async def chat_endpoint(req: ChatRequest):
         {"role": "user", "content": req.question}
     ]
     
-    # Выбираем провайдера (по умолчанию ollama)
+    
     provider = req.provider or "ollama"
     
     try:
         if provider == "openrouter":
-            # Используем OpenRouter.ai
+            
             ans = await engine.chat_openrouter(messages)
             if ans is None:
                 raise HTTPException(status_code=500, detail="OpenRouter failed - no response")
             return {"answer": ans}
         elif provider == "google":
-            # Используем Google AI Studio (Gemini)
+            
             ans = await engine.chat_google_ai_studio(messages)
             if ans is None:
                 raise HTTPException(status_code=500, detail="Google AI Studio failed - no response")
             return {"answer": ans}
         else:
-            # Используем Ollama (по умолчанию)
+            
             ans = await asyncio.to_thread(engine.chat_ollama_sync, messages)
             if ans is None:
                 raise HTTPException(status_code=500, detail="Ollama failed - no response")
@@ -111,9 +111,9 @@ async def translate_endpoint(req: TranslateRequest):
     if not engine:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
-    # Выбираем провайдера (по умолчанию google)
+    
     provider = req.provider or "google"
     
-    # Используем выбранный метод перевода
+    
     translation = await engine.translate_fast(req.text, provider=provider)
     return {"translation": translation}

@@ -12,7 +12,7 @@ from urllib3.util.retry import Retry
 from typing import List, Dict
 from tqdm import tqdm
 
-# Путь для кэша PDF
+
 CACHE_DIR = Path(__file__).parent.parent / "arxiv_pdfs"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -20,22 +20,21 @@ class ArxivLoader:
     def __init__(self, max_workers=10):
         self.max_workers = max_workers
         
-        # Настройка клиента ArXiv (оставляем как было для стабильности)
+        
         self.client = arxiv.Client(
             page_size=100,
             delay_seconds=3.0,
             num_retries=3
         )
 
-        # ОПТИМИЗАЦИЯ 1: Сессия с пулом соединений и повторными попытками
-        # Это ускоряет скачивание множества файлов подряд
+        
         self.session = requests.Session()
         retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
         adapter = HTTPAdapter(max_retries=retries, pool_connections=max_workers, pool_maxsize=max_workers)
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)
 
-        # ОПТИМИЗАЦИЯ 2: Компиляция регулярных выражений один раз
+        
         self.re_whitespace = re.compile(r'\s+')
         self.re_links = re.compile(r'http\S+')
         self.re_pagination = re.compile(r'\b\d+\s+\b')
@@ -44,7 +43,7 @@ class ArxivLoader:
         """Промышленная очистка текста"""
         if not text: 
             return ""
-        # Используем скомпилированные regex
+        
         text = self.re_whitespace.sub(' ', text).strip()
         text = self.re_links.sub('', text)
         text = self.re_pagination.sub('', text)
@@ -59,10 +58,10 @@ class ArxivLoader:
         pdf_url = paper_data['pdf_url']
         file_path = CACHE_DIR / f"{paper_id}.pdf"
 
-        # 1. Скачивание (если нет в кэше)
+        
         if not file_path.exists():
             try:
-                # Используем сессию
+                
                 with self.session.get(pdf_url, stream=True, timeout=30) as r:
                     r.raise_for_status()
                     with open(file_path, 'wb') as f:
@@ -70,31 +69,29 @@ class ArxivLoader:
                             f.write(chunk)
             except Exception as e:
                 print(f"Failed to download {paper_id}: {e}")
-                # Если не удалось скачать, возвращаем то, что есть (заголовок + абстракт)
+                
                 paper_data['full_text'] = f"{paper_data['title']}. {paper_data['abstract']}"
                 return paper_data
 
-        # 2. Парсинг (сразу же, пока файл "горячий" в кэше ОС)
+        
         full_text = ""
         try:
-            # fitz очень быстр, чтение с диска здесь не узкое место
-            # Используем более безопасный режим парсинга для проблемных PDF
+            
             with fitz.open(file_path) as doc:
-                # Собираем текст постранично с обработкой ошибок
+                
                 page_texts = []
                 for page_num, page in enumerate(doc):
                     try:
-                        # Пробуем стандартный метод
+                        
                         page_text = page.get_text()
                         if page_text:
                             page_texts.append(page_text)
                     except (RuntimeError, ValueError, AttributeError) as page_error:
-                        # Обрабатываем специфичные ошибки MuPDF (ExtGState, синтаксические ошибки)
+                        
                         error_str = str(page_error).lower()
                         if 'extgstate' in error_str or 'syntax error' in error_str or 'resource' in error_str:
-                            # Для проблемных PDF пробуем альтернативные методы
+                            
                             try:
-                                # Метод 1: Извлечение через словари (более устойчивый)
                                 page_text = page.get_text("dict")
                                 if page_text and 'blocks' in page_text:
                                     text_parts = []
@@ -112,7 +109,7 @@ class ArxivLoader:
                                 pass
                             
                             try:
-                                # Метод 2: Пробуем извлечь текст через rawdict (более низкоуровневый)
+                                
                                 page_text = page.get_text("rawdict")
                                 if page_text and 'blocks' in page_text:
                                     text_parts = []
@@ -129,13 +126,13 @@ class ArxivLoader:
                             except Exception:
                                 pass
                             
-                            # Если ничего не помогло, пропускаем страницу
+                            
                             print(f"Warning: Skipping page {page_num+1}/{len(doc)} in {paper_id} due to PDF parsing error (ExtGState/syntax)")
                         else:
-                            # Другие ошибки - просто пропускаем страницу
+                            
                             print(f"Warning: Skipping page {page_num+1}/{len(doc)} in {paper_id}: {page_error}")
                     except Exception as page_error:
-                        # Общая обработка остальных ошибок
+                        
                         print(f"Warning: Error on page {page_num+1}/{len(doc)} in {paper_id}: {page_error}")
                         continue
                 
@@ -144,7 +141,7 @@ class ArxivLoader:
             full_text = self.clean_text(full_text)
         except Exception as e:
             print(f"Failed to parse PDF {paper_id}: {e}")
-            # Пробуем альтернативный метод через pypdf (если доступен)
+            
             try:
                 import pypdf
                 with open(file_path, 'rb') as f:
@@ -153,18 +150,18 @@ class ArxivLoader:
                     full_text = self.clean_text(full_text)
                     print(f"Successfully parsed {paper_id} using pypdf fallback")
             except ImportError:
-                # pypdf не установлен, используем fallback
+                
                 pass
             except Exception as fallback_error:
                 print(f"Fallback parsing also failed for {paper_id}: {fallback_error}")
 
-        # Fallback если текст пустой или битый
+        
         if len(full_text) < 500:
             if full_text:
-                # Если есть хотя бы немного текста, добавляем к абстракту
+                
                 full_text = f"{paper_data['title']}. {paper_data['abstract']}. {full_text[:1000]}"
             else:
-                # Если текста совсем нет, используем только заголовок и абстракт
+                
                 full_text = f"{paper_data['title']}. {paper_data['abstract']}"
                 print(f"Warning: {paper_id} - using abstract only (PDF parsing failed or empty)")
 
@@ -183,15 +180,14 @@ class ArxivLoader:
             sort_by=arxiv.SortCriterion.Relevance
         )
 
-        # Список задач
+        
         futures = []
         final_papers = []
 
-        # ОПТИМИЗАЦИЯ 3: Конвейерная обработка
-        # Мы не ждем, пока скачаются ВСЕ метаданные. Мы добавляем задачи в пул по мере прихода данных.
+        
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             
-            # Генератор результатов от ArXiv
+            
             results_gen = self.client.results(search)
             
             try:
@@ -205,15 +201,14 @@ class ArxivLoader:
                         "published": str(r.published.date())
                     }
                     
-                    # Сразу кидаем в работу
+                    
                     futures.append(executor.submit(self._process_paper, paper_meta))
             except Exception as e:
                 print(f"Error fetching metadata: {e}")
 
             print(f"Found {len(futures)} papers. Processing (Download + Parse)...")
 
-            # Сбор результатов по мере готовности (as_completed)
-            # Это позволяет видеть прогрессбар "живым"
+            
             for future in tqdm(as_completed(futures), total=len(futures), desc="Processing"):
                 try:
                     result = future.result()

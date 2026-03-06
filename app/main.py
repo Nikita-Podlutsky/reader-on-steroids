@@ -2,16 +2,15 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse # <-- Добавили
+from fastapi.responses import FileResponse
 
-from app.config import STATIC_PATH
-from app.services.engine import HybridEngine
-from app.arxiv_loader import ArxivLoader
-from app.routers import endpoints
+from config import STATIC_PATH
+from services.engine import HybridEngine
+from arxiv_loader import ArxivLoader
+from routers import endpoints
 
-app = FastAPI(title="Kotodex Core API")
+app = FastAPI(title="Kotodex API")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,42 +18,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Глобальные переменные для хранения ресурсов
-engine_instance = None
-loader_instance = None
+# ── Health check —──────────────────────────────
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.on_event("startup")
 async def startup_event():
-    global engine_instance, loader_instance
-    print("=== STARTING KOTODEX CORE ===")
-    
-    # 1. Инициализируем движок
-    engine_instance = HybridEngine()
-    
-    # 2. Инициализируем лоадер
-    loader_instance = ArxivLoader()
-    
-    # 3. Передаем их в роутер
-    endpoints.init_globals(engine_instance, loader_instance)
+    engine = HybridEngine()
+    loader = ArxivLoader()
+    endpoints.init_globals(engine, loader)
 
-# Подключаем API роуты
 app.include_router(endpoints.router)
 
-# === ИСПРАВЛЕНИЕ СТАТИКИ ===
-
-# 1. Явный роут для главной страницы
+# ── Статика ───────────────────────────────────────────────────────────────────
 @app.get("/")
 async def read_root():
-    index_file = STATIC_PATH / "index.html"
-    
-    # ДЕБАГ: Пишем в консоль, где ищем файл
-    if not index_file.exists():
-        print(f"❌ ОШИБКА: Файл не найден по пути: {index_file.absolute()}")
-        return {"error": f"index.html not found at: {index_file.absolute()}"}
-    
-    return FileResponse(str(index_file))
+    index = STATIC_PATH / "index.html"
+    if not index.exists():
+        return {"error": "Frontend not built. See README."}
+    return FileResponse(str(index))
 
-# 2. Монтируем статику, чтобы работали скрипты, если они будут в файлах
+assets = STATIC_PATH / "assets"
+if assets.exists():
+    app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
 if STATIC_PATH.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_PATH)), name="static")
 

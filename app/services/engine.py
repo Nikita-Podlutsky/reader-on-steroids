@@ -13,8 +13,9 @@ import hashlib
 import aiohttp
 from google import genai
 from google.genai import types
+from ollama import Client
 
-from app.config import (
+from config import (
     DEVICE, SENTENCE_MODEL_NAME, OLLAMA_MODEL, OLLAMA_MODEL_FAST, OLLAMA_MODEL_CHAT, 
     OLLAMA_HOST, CHECKPOINT_PATH, BASE_DIR, OPENROUTER_API_URL, OPENROUTER_MODEL, 
     OPENROUTER_HEADERS, USE_GOOGLE_TRANSLATE, GOOGLE_AI_STUDIO_API_KEY, 
@@ -24,13 +25,43 @@ from app.config import (
 # Пытаемся импортировать твои файлы из корня проекта
 
 try:
-    from app.models import UniversalScorer
-    from app.checkpoint_utils import load_checkpoint
+    from models import UniversalScorer
+    from checkpoint_utils import load_checkpoint
     HAS_CUSTOM_MODEL = True
 except ImportError:
     print("WARNING: 'models.py' or 'checkpoint_utils.py' not found. Using fallback mode.")
     HAS_CUSTOM_MODEL = False
 
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+def ensure_ollama_model():
+    print(f"🤖 Checking Ollama connection at {OLLAMA_HOST}...")
+    client = Client(host=OLLAMA_HOST)
+    
+    try:
+        # 1. Проверяем, есть ли модель
+        models_list = client.list()
+        # ollama library возвращает объекты, нужно правильно проверить
+        models = [m['name'] for m in models_list.get('models', [])]
+        
+        # У Ollama имена могут быть с тегом 'latest', проверяем гибко
+        found = any(OLLAMA_MODEL in m for m in models)
+        
+        if not found:
+            print(f"📥 Model {OLLAMA_MODEL} not found inside Docker. Pulling now... (This may take time)")
+            # Это синхронный вызов, он заблокирует старт, пока не скачает
+            # Для первого запуска это нормально
+            client.pull(OLLAMA_MODEL)
+            print(f"✅ Model {OLLAMA_MODEL} downloaded successfully!")
+        else:
+            print(f"✅ Model {OLLAMA_MODEL} is ready.")
+            
+    except Exception as e:
+        print(f"⚠️ Warning: Could not connect to Ollama inside Docker: {e}")
+
+
+ensure_ollama_model()
 class HybridEngine:
     def __init__(self):
         self.device = torch.device(DEVICE)
@@ -144,7 +175,7 @@ class HybridEngine:
         q_emb = F.normalize(q_emb, p=2, dim=0).unsqueeze(0)
         q_input = torch.cat([q_emb, q_emb], dim=1)
         q_expanded = q_input.expand(len(papers), -1)
-        
+         
         doc_inputs = doc_embs_tensor.unsqueeze(1)
         mask = torch.ones(len(papers), 1, device=self.device)
 
