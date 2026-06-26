@@ -13,7 +13,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --no-deps googletrans==4.0.0rc1
+    pip install --no-cache-dir --no-deps googletrans==4.0.0rc1 peft
 
 COPY . .
 

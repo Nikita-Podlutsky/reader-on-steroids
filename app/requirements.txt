@@ -16,6 +16,10 @@ umap-learn==0.5.6
 hdbscan==0.8.40
 scikit-learn==1.5.1
 numpy==1.26.4
+transformers==4.44.0
+peft==0.12.0
+bitsandbytes==0.43.3
+accelerate==0.33.0
 
 # AI providers
 aiohttp==3.9.5

@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import shutil
 
-from config import CONFIG
+import config as CONFIG
 
 def save_checkpoint(model, optimizer, scheduler, scaler, state: dict, path: Path):
     """

@@ -24,13 +24,13 @@ from config import (
 
 # Пытаемся импортировать твои файлы из корня проекта
 
-try:
-    from models import UniversalScorer
-    from checkpoint_utils import load_checkpoint
-    HAS_CUSTOM_MODEL = True
-except ImportError:
-    print("WARNING: 'models.py' or 'checkpoint_utils.py' not found. Using fallback mode.")
-    HAS_CUSTOM_MODEL = False
+# try:
+from services.models import UniversalScorer
+from services.checkpoint_utils import load_checkpoint
+HAS_CUSTOM_MODEL = True
+# except ImportError:
+#     print("WARNING: 'models.py' or 'checkpoint_utils.py' not found. Using fallback mode.")
+#     HAS_CUSTOM_MODEL = False
 
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")

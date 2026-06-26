@@ -2,33 +2,6 @@ version: '3.9'
 
 services:
 
-  ml-service:
-    build:
-      context: ./ml-service
-      dockerfile: Dockerfile
-    container_name: kotodex-ml
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./checkpoints:/app/checkpoints:ro
-      - arxiv_pdfs:/app/arxiv_pdfs
-    environment:
-      - DEVICE=cuda
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-
   backend:
     build:
       context: ./app
@@ -39,21 +12,27 @@ services:
       - "8000:8000"
     volumes:
       - arxiv_pdfs:/app/arxiv_pdfs
+      - ./checkpoints:/app/checkpoints:ro
     environment:
-      - ML_SERVICE_URL=http://ml-service:8001
+      - DEVICE=cuda
       - OLLAMA_HOST=http://host.docker.internal:11434
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - GOOGLE_AI_STUDIO_API_KEY=${GOOGLE_AI_STUDIO_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      ml-service:
-        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 3
+      start_period: 120s
 
   frontend:
     build:

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from transformers import AutoModel, AutoConfig
 from peft import LoraConfig, get_peft_model, TaskType
 
-from config import CONFIG
+import config as CONFIG
 
 try:
     from transformers import BitsAndBytesConfig
